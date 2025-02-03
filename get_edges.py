@@ -1,8 +1,9 @@
-
+from argparse import ArgumentParser
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import chain
 
+from OCP.OCP.IFSelect import IFSelect_ReturnStatus
 from OCP.OCP.STEPControl import STEPControl_Reader
 from OCP.TopoDS import TopoDS_Shape, TopoDS
 from OCP.TopExp import TopExp_Explorer
@@ -69,7 +70,11 @@ def get_edge_graph(edges: list[Edge]) -> dict[Edge, list[Edge]]:
         points_to_edge[edge.last_p].append(idx)
 
     for idx, edge in enumerate(edges):
-        edge_graph[edge] = [edges[i] for i in chain(points_to_edge[edge.first_p], points_to_edge[edge.last_p]) if i != idx]
+        edge_graph[edge] = [
+            edges[i]
+            for i in chain(points_to_edge[edge.first_p], points_to_edge[edge.last_p])
+            if i != idx
+        ]
 
     return edge_graph
 
@@ -105,7 +110,6 @@ def get_edges(shape: TopoDS_Shape) -> dict[int, list[Edge]]:
         face_edges[face_idx] = edges
 
     return face_edges
-
 
 
 def get_edge_loops(edges: list[Edge]) -> list[list[tuple[Edge, bool]]]:
@@ -177,7 +181,9 @@ def get_visualization(face_edge_map: dict[int, list[Edge]], face_idx: int) -> No
 
     ps.init()
     for idx, points in enumerate(loop_points):
-        edges = np.array([(i, i + 1) for i in range(len(points) - 1)] + [(len(points) - 1, 0)])
+        edges = np.array(
+            [(i, i + 1) for i in range(len(points) - 1)] + [(len(points) - 1, 0)]
+        )
         ps.register_curve_network(f"loop_{idx}", points, edges)
     ps.show()
 
