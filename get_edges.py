@@ -10,9 +10,10 @@ from OCP.TopExp import TopExp_Explorer
 from OCP.TopAbs import TopAbs_FACE, TopAbs_EDGE
 import numpy as np
 import polyscope as ps
-from OCP.BRepAdaptor import BRepAdaptor_Curve
+from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
 from OCP.gp import gp_Pnt
 from typing import TypeAlias
+import OCP.GeomAbs as ga
 
 Vec3d: TypeAlias = tuple[float, float, float]
 
@@ -85,22 +86,17 @@ def get_edges(shape: TopoDS_Shape) -> dict[int, list[Edge]]:
     # Iterate over faces
     face_explorer = TopExp_Explorer(shape, TopAbs_FACE)
     faces = []
-
+    edge_idx = face_idx = 0
+    face_edges = dict()
     while face_explorer.More():
         face = face_explorer.Current()
         faces.append(face)
         face_explorer.Next()
 
-    if not faces:
-        raise ValueError("No faces found in the shape.")
-
-    face_edges = dict()
-    edge_idx = 0
-    for face_idx, face in enumerate(faces):
         # Extract edges from the face
+        face = TopoDS.Face_s(face)
         edge_explorer = TopExp_Explorer(face, TopAbs_EDGE)
         edges = []
-
         while edge_explorer.More():
             curve = BRepAdaptor_Curve(TopoDS.Edge_s(edge_explorer.Current()))
             edge = Edge(curve, edge_idx)
@@ -108,6 +104,15 @@ def get_edges(shape: TopoDS_Shape) -> dict[int, list[Edge]]:
             edges.append(edge)
             edge_explorer.Next()
         face_edges[face_idx] = edges
+        face_idx += 1
+
+        surface = BRepAdaptor_Surface(face)
+        print(face_idx, surface.GetType())
+        # if surface.GetType() == ga.GeomAbs_BSplineCurve:
+        #     pass
+
+    if not faces:
+        raise ValueError("No faces found in the shape.")
 
     return face_edges
 
@@ -200,7 +205,7 @@ def run(step_file: str) -> None:
     shape = reader.OneShape()
     face_edge_map = get_edges(shape)
     print(f"Found {len(face_edge_map)} faces.")
-    get_visualization(face_edge_map, 0)
+    get_visualization(face_edge_map, 3)
 
 
 if __name__ == "__main__":
