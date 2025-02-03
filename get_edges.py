@@ -2,7 +2,9 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import chain
+from argparse import ArgumentParser
 
+from OCP.OCP.IFSelect import IFSelect_ReturnStatus
 from OCP.OCP.STEPControl import STEPControl_Reader
 from OCP.TopoDS import TopoDS_Shape, TopoDS
 from OCP.TopExp import TopExp_Explorer
@@ -66,7 +68,11 @@ def get_edge_graph(edges: list[Edge]) -> dict[Edge, list[Edge]]:
         points_to_edge[edge.last_p].append(idx)
 
     for idx, edge in enumerate(edges):
-        edge_graph[edge] = [edges[i] for i in chain(points_to_edge[edge.first_p], points_to_edge[edge.last_p]) if i != idx]
+        edge_graph[edge] = [
+            edges[i]
+            for i in chain(points_to_edge[edge.first_p], points_to_edge[edge.last_p])
+            if i != idx
+        ]
 
     return edge_graph
 
@@ -105,7 +111,6 @@ def get_edges(shape: TopoDS_Shape) -> dict[int, list[Edge]]:
 
 
 def get_face_edges(face_edge_map: dict[int, list[Edge]], face_idx: int) -> None:
-
     if face_idx not in face_edge_map:
         raise IndexError(f"Face index {face_idx} not in face edge map.")
 
@@ -126,7 +131,10 @@ def get_face_edges(face_edge_map: dict[int, list[Edge]], face_idx: int) -> None:
         while True:
             has_next = False
             for neigh in edge_graph[current]:
-                if neigh not in visited and current.last_p in (neigh.first_p, neigh.last_p):
+                if neigh not in visited and current.last_p in (
+                    neigh.first_p,
+                    neigh.last_p,
+                ):
                     if neigh.first_p == current.last_p:
                         loop.append((neigh, True))
                     elif neigh.last_p == current.last_p:
@@ -172,15 +180,17 @@ def get_face_edges(face_edge_map: dict[int, list[Edge]], face_idx: int) -> None:
 
     ps.init()
     for idx, points in enumerate(loop_points):
-        edges = np.array([(i, i+1) for i in range(len(points) - 1)])
+        edges = np.array([(i, i + 1) for i in range(len(points) - 1)])
         ps.register_curve_network(f"loop_{idx}", points, edges)
     ps.show()
 
 
-def main():
+def run(step_file: str) -> None:
     reader = STEPControl_Reader()
-    step_file = "/home/nico/spanflug/bm_parts/2906/repaired.step"
-    reader.ReadFile(step_file)
+    status = reader.ReadFile(step_file)
+    if status != IFSelect_ReturnStatus.IFSelect_RetDone:
+        raise RuntimeError("Error reading file")
+
     reader.TransferRoots()
     shape = reader.OneShape()
     face_edge_map = get_edges(shape)
@@ -189,4 +199,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = ArgumentParser()
+    parser.add_argument("filename", help="input step file")
+    args = parser.parse_args()
+    run(args.filename)
