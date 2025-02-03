@@ -2,9 +2,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import chain
-from argparse import ArgumentParser
 
-from OCP.OCP.IFSelect import IFSelect_ReturnStatus
 from OCP.OCP.STEPControl import STEPControl_Reader
 from OCP.TopoDS import TopoDS_Shape, TopoDS
 from OCP.TopExp import TopExp_Explorer
@@ -13,6 +11,9 @@ import numpy as np
 import polyscope as ps
 from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.gp import gp_Pnt
+from typing import TypeAlias
+
+Vec3d: TypeAlias = tuple[float, float, float]
 
 
 @dataclass(frozen=True)
@@ -32,11 +33,11 @@ class Edge:
         return self.curve.LastParameter()
 
     @property
-    def first_p(self) -> tuple[float, float, float]:
+    def first_p(self) -> Vec3d:
         return self.get_point(self.start_param)
 
     @property
-    def last_p(self) -> tuple[float, float, float]:
+    def last_p(self) -> Vec3d:
         return self.get_point(self.end_param)
 
     def sample_points(self, n_points: int) -> np.ndarray:
@@ -54,7 +55,7 @@ class Edge:
 
         return np.round(points, decimals=3)
 
-    def get_point(self, param: float) -> tuple[float, float, float]:
+    def get_point(self, param: float) -> Vec3d:
         p = gp_Pnt()
         self.curve.D0(param, p)
         return round(p.X(), 3), round(p.Y(), 3), round(p.Z(), 3)
@@ -62,17 +63,13 @@ class Edge:
 
 def get_edge_graph(edges: list[Edge]) -> dict[Edge, list[Edge]]:
     edge_graph: dict[Edge, list[Edge]] = defaultdict(list)
-    points_to_edge: dict[tuple[float, float, float], list[int]] = defaultdict(list)
+    points_to_edge: dict[Vec3d, list[int]] = defaultdict(list)
     for idx, edge in enumerate(edges):
         points_to_edge[edge.first_p].append(idx)
         points_to_edge[edge.last_p].append(idx)
 
     for idx, edge in enumerate(edges):
-        edge_graph[edge] = [
-            edges[i]
-            for i in chain(points_to_edge[edge.first_p], points_to_edge[edge.last_p])
-            if i != idx
-        ]
+        edge_graph[edge] = [edges[i] for i in chain(points_to_edge[edge.first_p], points_to_edge[edge.last_p]) if i != idx]
 
     return edge_graph
 
@@ -110,79 +107,81 @@ def get_edges(shape: TopoDS_Shape) -> dict[int, list[Edge]]:
     return face_edges
 
 
-def get_face_edges(face_edge_map: dict[int, list[Edge]], face_idx: int) -> None:
+
+def get_edge_loops(edges: list[Edge]) -> list[list[tuple[Edge, bool]]]:
+    graph: dict[Vec3d, list[tuple[Vec3d, Edge]]] = defaultdict(list)
+    for idx, edge in enumerate(edges):
+        graph[edge.first_p].append((edge.last_p, edge))
+        graph[edge.last_p].append((edge.first_p, edge))
+
+    # -------
+    # |     |
+    # |     |
+    # -------
+
+    edge_loops: list[list[tuple[Edge, bool]]] = []
+    current = next(iter(graph.keys()))
+    loop = []
+    visited = {current}
+    while True:
+        has_next = False
+        neighs = graph[current]
+        for pnt, edge in neighs:
+            if pnt not in visited:
+                has_next = True
+                current = pnt
+                visited.add(current)
+                # check edge orientation
+                if current == edge.first_p:
+                    loop.append((edge, True))
+                else:
+                    loop.append((edge, False))
+                break
+        if not has_next:
+            break
+    # add last edge
+    edge = next(e for p, e in graph[current] if e not in loop)
+    if current == edge.first_p:
+        loop.append((edge, False))
+    else:
+        loop.append((edge, True))
+
+    edge_loops.append(loop)
+    return edge_loops
+
+
+def get_visualization(face_edge_map: dict[int, list[Edge]], face_idx: int) -> None:
     if face_idx not in face_edge_map:
         raise IndexError(f"Face index {face_idx} not in face edge map.")
 
     edges = face_edge_map[face_idx]
-    edge_graph = get_edge_graph(edges)
-
-    # -------
-    # |     |
-    # |     |
-    # -------
-
-    loops = []
-    while edge_graph:
-        current = next(iter(edge_graph.keys()))
-        # loop_points = [current.sample_points(10)]
-        loop = [(current, True)]
-        visited = {current}
-        while True:
-            has_next = False
-            for neigh in edge_graph[current]:
-                if neigh not in visited and current.last_p in (
-                    neigh.first_p,
-                    neigh.last_p,
-                ):
-                    if neigh.first_p == current.last_p:
-                        loop.append((neigh, True))
-                    elif neigh.last_p == current.last_p:
-                        loop.append((neigh, False))
-                    # else:
-                    #     raise ValueError
-                    # loop_points.append(current.sample_points(10))
-                    has_next = True
-                    current = neigh
-                    visited.add(current)
-                    break
-            if not has_next:
-                break
-
-        # while True:
-        #     has_next = False
-        #     for neigh in edge_graph[current]:
-        #         if neigh not in visited:
-        #             has_next = True
-        #             current = neigh
-        #             new_points = current.sample_points(10)
-        #             if new_points[-1] == loop_points[-1][-1]:
-        #                 loop_points.append(new_points)
-        #             else:
-        #                 loop_points.append(new_points[::-1])
-        #             visited.add(current)
-        #             break
-        #     if not has_next:
-        #         break
-
-        loops.append(np.vstack(loop_points))
-        edge_graph = {k: v for k, v in edge_graph.items() if k not in visited}
+    edge_loops = get_edge_loops(edges)
 
     # visualize
     loop_points = []
-    for loop in loops:
+    for loop in edge_loops:
+        # for edge, reverse in loop:
+        #     if reverse:
+        #         print(edge.last_p, edge.first_p)
+        #     else:
+        #         print(edge.first_p, edge.last_p)
+
         all_points = []
-        for edge in loop:
+        for edge, reverse in loop:
             points = edge.sample_points(10)
+            if reverse:
+                points = points[::-1]
             all_points.append(points[:-1])  # last point is first of the next edge
         loop_points.append(np.vstack(all_points))
         break
 
     ps.init()
     for idx, points in enumerate(loop_points):
-        edges = np.array([(i, i + 1) for i in range(len(points) - 1)])
+        edges = np.array([(i, i + 1) for i in range(len(points) - 1)] + [(len(points) - 1, 0)])
         ps.register_curve_network(f"loop_{idx}", points, edges)
     ps.show()
+
+    return
 
 
 def run(step_file: str) -> None:
@@ -195,7 +194,7 @@ def run(step_file: str) -> None:
     shape = reader.OneShape()
     face_edge_map = get_edges(shape)
     print(f"Found {len(face_edge_map)} faces.")
-    face_edges = get_face_edges(face_edge_map, 0)
+    get_visualization(face_edge_map, 0)
 
 
 if __name__ == "__main__":
