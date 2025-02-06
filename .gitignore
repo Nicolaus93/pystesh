@@ -1,2 +1,4 @@
 assets/
 *.ini
+*.png
+*__pycache__*
