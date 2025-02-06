@@ -1,8 +1,6 @@
-
 import triangle
 import numpy as np
 import matplotlib.pyplot as plt
-import numpy.typing as npt
 
 
 def create_constrained_triangulation(points, edges):
@@ -97,7 +95,6 @@ def plot_triangulation(points, edges, triangulation):
     plt.axis("equal")
     plt.grid(True)
     plt.legend()
-    # plt.show()
     plt.savefig("triangulation.png")
 
 

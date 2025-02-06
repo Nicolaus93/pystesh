@@ -75,21 +75,21 @@ def get_edge_graph(edges: list[Edge]) -> dict[Edge, list[Edge]]:
     return edge_graph
 
 
-def get_edges(shape: TopoDS_Shape) -> dict[int, list[Edge]]:
+def get_edges(shape: TopoDS_Shape) -> tuple[list[TopoDS.Face_s], dict[int, list[Edge]]]:
     """Extract edges from a shape."""
 
     # Iterate over faces
     face_explorer = TopExp_Explorer(shape, TopAbs_FACE)
     faces = []
     edge_idx = face_idx = 0
-    face_edges = dict()
+    face_edge_map = dict()
     while face_explorer.More():
         face = face_explorer.Current()
-        faces.append(face)
         face_explorer.Next()
 
         # Extract edges from the face
         face = TopoDS.Face_s(face)
+        faces.append(face)
         edge_explorer = TopExp_Explorer(face, TopAbs_EDGE)
         edges = []
         while edge_explorer.More():
@@ -98,7 +98,7 @@ def get_edges(shape: TopoDS_Shape) -> dict[int, list[Edge]]:
             edge_idx += 1
             edges.append(edge)
             edge_explorer.Next()
-        face_edges[face_idx] = edges
+        face_edge_map[face_idx] = edges
         face_idx += 1
 
         surface = BRepAdaptor_Surface(face)
@@ -109,7 +109,7 @@ def get_edges(shape: TopoDS_Shape) -> dict[int, list[Edge]]:
     if not faces:
         raise ValueError("No faces found in the shape.")
 
-    return face_edges
+    return faces, face_edge_map
 
 
 def get_edge_loops(edges: list[Edge]) -> list[list[tuple[Edge, bool]]]:
