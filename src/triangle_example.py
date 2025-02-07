@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def create_constrained_triangulation(points, edges):
+def create_constrained_triangulation(points, edges, quality: bool = False):
     """
     Create a constrained Delaunay triangulation from points and edges.
 
@@ -47,7 +47,7 @@ def create_constrained_triangulation(points, edges):
     triangulation = triangle.triangulate(tri_data, "p")  # Start with just 'p'
 
     # If you need quality constraints, can add them in a second pass
-    if triangulation:
+    if triangulation and quality:
         triangulation = triangle.triangulate(triangulation, "q")
 
     return triangulation
