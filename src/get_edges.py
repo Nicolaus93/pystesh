@@ -102,6 +102,12 @@ def get_edges(shape: TopoDS_Shape) -> tuple[list[TopoDS.Face_s], dict[int, list[
         face_edge_map[face_idx] = edges
         face_idx += 1
 
+        # from src.faces.cone import project_point_to_uv
+        # from OCP.BRep import BRep_Tool
+        #
+        # surface = BRep_Tool.Surface_s(face)
+        # project_point_to_uv(surface, gp_Pnt(*points[0]))
+
         surface = BRepAdaptor_Surface(face)
         logger.debug(f"face: {face_idx} => {surface.GetType()}")
         # if surface.GetType() == ga.GeomAbs_BSplineCurve:

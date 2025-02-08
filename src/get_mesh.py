@@ -146,6 +146,7 @@ def get_visualization(face, edges, debug: bool = False) -> FaceMesh:
 
 
 def run(step_file: str) -> None:
+    logger.info("Reading step file..")
     reader = STEPControl_Reader()
     status = reader.ReadFile(step_file)
     if status != IFSelect_ReturnStatus.IFSelect_RetDone:
@@ -153,6 +154,7 @@ def run(step_file: str) -> None:
 
     reader.TransferRoots()
     shape = reader.OneShape()
+    logger.info("Retrieving face edges..")
     faces, face_edge_map = get_edges(shape)
     logger.info(f"Found {len(face_edge_map)} faces.")
     # idx = 55
@@ -162,8 +164,8 @@ def run(step_file: str) -> None:
         with contextlib.suppress(NotImplementedError):
             face_mesh = get_visualization(face, face_edge_map[idx])
             mesh[idx] = face_mesh
-        if idx == 42:
-            break
+        # if idx == 42:
+        #     break
 
     ps.init()
     for idx, face_mesh in mesh.items():
