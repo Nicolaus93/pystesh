@@ -1,6 +1,6 @@
-import triangle
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import triangle
 
 
 def create_constrained_triangulation(points, edges, quality: bool = False):

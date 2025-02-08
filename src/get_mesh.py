@@ -1,18 +1,21 @@
+import contextlib
 from argparse import ArgumentParser
+from dataclasses import dataclass
 
+import matplotlib.pyplot as plt
+import numpy as np
+import numpy.typing as npt
+import polyscope as ps
+from loguru import logger
 from OCP.OCP.BRep import BRep_Tool
 from OCP.OCP.GeomAPI import GeomAPI_ProjectPointOnSurf
+from OCP.OCP.gp import gp_Pnt
 from OCP.OCP.IFSelect import IFSelect_ReturnStatus
 from OCP.OCP.STEPControl import STEPControl_Reader
 from OCP.OCP.TopoDS import TopoDS_Face
-from OCP.OCP.gp import gp_Pnt
 
 from src.get_edges import get_edge_loops, get_edges
-import numpy as np
 from src.triangle_example import create_constrained_triangulation, plot_triangulation
-import polyscope as ps
-
-import matplotlib.pyplot as plt
 
 
 def map_points_to_uv(
@@ -74,17 +77,32 @@ def map_uv_to_3d(face: TopoDS_Face, uv_coords: np.ndarray) -> np.ndarray:
     return np.array(points_3d)
 
 
-def get_visualization(face, edges, debug: bool = False) -> None:
+@dataclass
+class CurveNetwork:
+    points: npt.NDArray[np.floating]
+    edges: npt.NDArray[np.integer]
+
+
+@dataclass
+class FaceMesh:
+    vertices: npt.NDArray[np.floating]
+    triangles: npt.NDArray[np.integer]
+    boundary: CurveNetwork
+
+
+def get_visualization(face, edges, debug: bool = False) -> FaceMesh:
     edge_loops = get_edge_loops(edges)
 
     # visualize
     loop_points = []
     for loop in edge_loops:
-        # for edge, reverse in loop:
-        #     if reverse:
-        #         print(edge.last_p, edge.first_p)
-        #     else:
-        #         print(edge.first_p, edge.last_p)
+        if debug:
+            # double check
+            for edge, reverse in loop:
+                if reverse:
+                    logger.debug(f"{edge.last_p}, {edge.first_p}")
+                else:
+                    logger.debug(f"{edge.first_p}, {edge.last_p}")
 
         all_points = []
         for edge, reverse in loop:
@@ -96,33 +114,35 @@ def get_visualization(face, edges, debug: bool = False) -> None:
         loop_points.append(np.vstack(all_points))
         break  # TODO: remove (we could have more than 1 loop)
 
-    for idx, uv_points in enumerate(loop_points):
-        edges = np.array(
-            [(i, i + 1) for i in range(len(uv_points) - 1)] + [(len(uv_points) - 1, 0)]
-        )
+    if len(loop_points) > 1:
+        logger.error("Not handling multiple edge loops yet..")
+        raise NotImplementedError
 
-        # Create triangulation
-        triangulation = create_constrained_triangulation(uv_points, edges)
-        if not triangulation:
-            raise ValueError("Triangulation Failed")
+    uv_points = loop_points[0]
+    edges = np.array(
+        [(i, i + 1) for i in range(len(uv_points) - 1)] + [(len(uv_points) - 1, 0)]
+    )
 
-        # debug = True
-        if debug:
-            plot_triangulation(uv_points, edges, triangulation)
+    # Create triangulation
+    triangulation = create_constrained_triangulation(uv_points, edges)
+    if not triangulation:
+        raise ValueError("Triangulation Failed")
 
-        # map back to 3d
-        vertices = triangulation["vertices"]
-        points_3d = map_uv_to_3d(face, uv_points)
-        vertices_3d = map_uv_to_3d(face, vertices)
-        triangles = triangulation["triangles"]
-        print()
+    # debug = True
+    if debug:
+        plot_triangulation(uv_points, edges, triangulation)
 
-        ps.init()
-        ps.register_curve_network(f"loop_{idx}", points_3d, edges)
-        ps.register_surface_mesh("face", vertices_3d, triangles, smooth_shade=True)
-        ps.show()
-
-    return
+    # map back to 3d
+    vertices = triangulation["vertices"]
+    vertices_3d = map_uv_to_3d(face, vertices)
+    triangles = triangulation["triangles"]
+    # add edges for debugging
+    points_3d = map_uv_to_3d(face, uv_points)
+    curve_network = CurveNetwork(points=points_3d, edges=edges)
+    face_mesh = FaceMesh(
+        vertices=vertices_3d, triangles=triangles, boundary=curve_network
+    )
+    return face_mesh
 
 
 def run(step_file: str) -> None:
@@ -134,9 +154,24 @@ def run(step_file: str) -> None:
     reader.TransferRoots()
     shape = reader.OneShape()
     faces, face_edge_map = get_edges(shape)
-    print(f"Found {len(face_edge_map)} faces.")
-    idx = 55
-    get_visualization(faces[idx], face_edge_map[idx])
+    logger.info(f"Found {len(face_edge_map)} faces.")
+    # idx = 55
+    mesh = dict()
+    for idx, face in enumerate(faces):
+        logger.info(f"Meshing face {idx}")
+        with contextlib.suppress(NotImplementedError):
+            face_mesh = get_visualization(face, face_edge_map[idx])
+            mesh[idx] = face_mesh
+        if idx == 42:
+            break
+
+    ps.init()
+    for idx, face_mesh in mesh.items():
+        # ps.register_curve_network(f"loop_{idx}", face_mesh.boundary.points, face_mesh.boundary.edges)
+        ps.register_surface_mesh(
+            f"face_{idx}", face_mesh.vertices, face_mesh.triangles, smooth_shade=True
+        )
+    ps.show()
 
 
 if __name__ == "__main__":

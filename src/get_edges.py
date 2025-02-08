@@ -1,14 +1,15 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import chain
+from typing import TypeAlias
 
-from OCP.TopoDS import TopoDS_Shape, TopoDS
-from OCP.TopExp import TopExp_Explorer
-from OCP.TopAbs import TopAbs_FACE, TopAbs_EDGE
 import numpy as np
+from loguru import logger
 from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
 from OCP.gp import gp_Pnt
-from typing import TypeAlias
+from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
+from OCP.TopExp import TopExp_Explorer
+from OCP.TopoDS import TopoDS, TopoDS_Shape
 
 Vec3d: TypeAlias = tuple[float, float, float]
 
@@ -102,7 +103,7 @@ def get_edges(shape: TopoDS_Shape) -> tuple[list[TopoDS.Face_s], dict[int, list[
         face_idx += 1
 
         surface = BRepAdaptor_Surface(face)
-        print(face_idx, surface.GetType())
+        logger.debug(f"face: {face_idx} => {surface.GetType()}")
         # if surface.GetType() == ga.GeomAbs_BSplineCurve:
         #     pass
 
