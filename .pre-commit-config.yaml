@@ -6,7 +6,6 @@ repos:
     hooks:
       - id: check-added-large-files
         args: ["--maxkb=1000"]
-        exclude: ^mock-worker/cad-analysis/output_templates/.*
       - id: check-ast
       - id: check-merge-conflict
       - id: check-toml
@@ -34,8 +33,10 @@ repos:
       # Run the linter.
       - id: ruff
         args: [--fix, --show-fixes]
+      - id: ruff
+        args: [check, --select, I, --fix]
       # Run the formatter for check
       - id: ruff-format
         args: [--check]
-      # Run the formatte for fix
+      # Run the formatter for fix
       - id: ruff-format
