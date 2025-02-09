@@ -2,79 +2,16 @@ import contextlib
 from argparse import ArgumentParser
 from dataclasses import dataclass
 
-import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import polyscope as ps
 from loguru import logger
-from OCP.OCP.BRep import BRep_Tool
-from OCP.OCP.GeomAPI import GeomAPI_ProjectPointOnSurf
-from OCP.OCP.gp import gp_Pnt
 from OCP.OCP.IFSelect import IFSelect_ReturnStatus
 from OCP.OCP.STEPControl import STEPControl_Reader
-from OCP.OCP.TopoDS import TopoDS_Face
 
-from src.get_edges import get_edge_loops, get_edges
+from src.faces.get_edges import get_edge_loops, get_edges
+from src.faces.utils import map_points_to_uv, map_uv_to_3d
 from src.triangle_example import create_constrained_triangulation, plot_triangulation
-
-
-def map_points_to_uv(
-    face: TopoDS_Face,
-    points_3d: np.ndarray,
-    tolerance: float = 1e-6,
-    debug: bool = False,
-) -> np.ndarray:
-    """Map 3D points to (u, v) parametric coordinates on the B-spline surface."""
-    surface = BRep_Tool.Surface_s(
-        face
-    )  # Surface_s automatically handles the extraction of the correct surface type
-    uv_coords = []
-    for point in points_3d:
-        pnt = gp_Pnt(point[0], point[1], point[2])
-        projector = GeomAPI_ProjectPointOnSurf(pnt, surface, tolerance)
-        if projector.NbPoints() > 0:
-            u, v = projector.LowerDistanceParameters()
-            uv_coords.append([u, v])
-        else:
-            raise ValueError(f"Point {point} could not be projected onto the surface.")
-
-    uv_coords = np.array(uv_coords)
-    if debug:
-        # points_2d, to_2d, normal, centroid = project_points_to_2d(points_3d)
-        plt.scatter(uv_coords[:, 0], uv_coords[:, 1], color="blue", alpha=0.5)
-
-        # Add title and labels
-        plt.title("Scatter Plot Example")
-        plt.xlabel("X-axis")
-        plt.ylabel("Y-axis")
-
-        # Show the plot
-        plt.savefig("scatter_plot.png")
-    return np.array(uv_coords)
-
-
-def map_uv_to_3d(face: TopoDS_Face, uv_coords: np.ndarray) -> np.ndarray:
-    """
-    Map (u, v) parametric coordinates to 3D points on the B-spline surface.
-
-    Args:
-        face: The TopoDS_Face representing the B-spline surface.
-        uv_coords: A numpy array of shape (n, 2) containing (u, v) coordinates.
-
-    Returns:
-        A numpy array of shape (n, 3) containing the corresponding 3D points.
-    """
-    # Extract the geometric surface from the TopoDS_Face
-    surface = BRep_Tool.Surface_s(face)
-
-    # Map (u, v) to 3D
-    points_3d = []
-    for u, v in uv_coords:
-        pnt = gp_Pnt()
-        surface.D0(u, v, pnt)  # Evaluate the surface at (u, v)
-        points_3d.append([pnt.X(), pnt.Y(), pnt.Z()])
-
-    return np.array(points_3d)
 
 
 @dataclass
@@ -97,7 +34,6 @@ def get_visualization(face, edges, debug: bool = False) -> FaceMesh:
     loop_points = []
     for loop in edge_loops:
         if debug:
-            # double check
             for edge, reverse in loop:
                 if reverse:
                     logger.debug(f"{edge.last_p}, {edge.first_p}")
@@ -164,8 +100,8 @@ def run(step_file: str) -> None:
         with contextlib.suppress(NotImplementedError):
             face_mesh = get_visualization(face, face_edge_map[idx])
             mesh[idx] = face_mesh
-        # if idx == 42:
-        #     break
+        if idx == 42:
+            break
 
     ps.init()
     for idx, face_mesh in mesh.items():
