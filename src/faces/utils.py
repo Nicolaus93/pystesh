@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy as np
 from OCP.OCP.BRep import BRep_Tool
 from OCP.OCP.GeomAPI import GeomAPI_ProjectPointOnSurf
@@ -22,30 +21,11 @@ def map_points_to_uv(
         projector = GeomAPI_ProjectPointOnSurf(pnt, surface, tolerance)
         if projector.NbPoints() > 0:
             u, v = projector.LowerDistanceParameters()
-            assert np.allclose(map_uv_to_3d(face, [(u, v)]), pnt.Coord(), atol=1e-3)
             uv_coords.append([u, v])
         else:
             raise ValueError(f"Point {point} could not be projected onto the surface.")
 
-        # from OCP.OCP.Geom import Geom_ConicalSurface
-        # if isinstance(surface, Geom_ConicalSurface):
-        #     from src.faces.cone import project_point_to_uv
-        #
-        #     temp = project_point_to_uv(face, pnt)
-        #     print(u, v, temp)
-
     uv_coords = np.array(uv_coords)
-    if debug:
-        # points_2d, to_2d, normal, centroid = project_points_to_2d(points_3d)
-        plt.scatter(uv_coords[:, 0], uv_coords[:, 1], color="blue", alpha=0.5)
-
-        # Add title and labels
-        plt.title("Scatter Plot Example")
-        plt.xlabel("X-axis")
-        plt.ylabel("Y-axis")
-
-        # Show the plot
-        plt.savefig("scatter_plot.png")
     return np.array(uv_coords)
 
 

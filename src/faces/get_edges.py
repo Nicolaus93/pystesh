@@ -4,6 +4,7 @@ from itertools import chain
 from typing import TypeAlias
 
 import numpy as np
+from OCP.GCPnts import GCPnts_AbscissaPoint
 from loguru import logger
 from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
 from OCP.gp import gp_Pnt
@@ -41,6 +42,9 @@ class Edge:
     def sample_points(self, n_points: int) -> np.ndarray:
         """Sample points along an edge, including the first and last points."""
 
+        length = GCPnts_AbscissaPoint.Length_s(self.curve, self.start_param, self.end_param)
+        n_points = 2 + int(length / 3)
+
         # Generate parameter values
         param_values = np.linspace(self.start_param, self.end_param, n_points)
 
@@ -49,9 +53,9 @@ class Edge:
         for param in param_values:
             pnt = gp_Pnt()
             self.curve.D0(param, pnt)
-            points.append([pnt.X(), pnt.Y(), pnt.Z()])
+            points.append(pnt)
 
-        return np.round(points, decimals=3)
+        return np.round([(pnt.X(), pnt.Y(), pnt.Z()) for pnt in points], decimals=3)
 
     def get_point(self, param: float) -> Vec3d:
         p = gp_Pnt()

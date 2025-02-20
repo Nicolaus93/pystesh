@@ -1,14 +1,19 @@
 import contextlib
 from argparse import ArgumentParser
 from dataclasses import dataclass
+from functools import singledispatch
 
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import polyscope as ps
+from OCP.BRep import BRep_Tool
+from OCP.Geom import Geom_ConicalSurface
 from loguru import logger
 from OCP.OCP.IFSelect import IFSelect_ReturnStatus
 from OCP.OCP.STEPControl import STEPControl_Reader
 
+from src.faces.cone import get_2d_points_cone, get_uv_points_from_2d
 from src.faces.get_edges import get_edge_loops, get_edges
 from src.faces.utils import map_points_to_uv, map_uv_to_3d
 from src.triangle_example import create_constrained_triangulation, plot_triangulation
@@ -24,7 +29,13 @@ class CurveNetwork:
 class FaceMesh:
     vertices: npt.NDArray[np.floating]
     triangles: npt.NDArray[np.integer]
-    boundary: CurveNetwork
+    boundary: CurveNetwork | None = None
+
+
+@dataclass
+class Points2d:
+    uv_points: npt.NDArray[np.floating]
+    proj_points: npt.NDArray[np.floating]
 
 
 def get_visualization(face, edges, debug: bool = False) -> FaceMesh:
@@ -32,6 +43,7 @@ def get_visualization(face, edges, debug: bool = False) -> FaceMesh:
 
     # visualize
     loop_points = []
+    edge_points = []
     for loop in edge_loops:
         if debug:
             for edge, reverse in loop:
@@ -40,43 +52,73 @@ def get_visualization(face, edges, debug: bool = False) -> FaceMesh:
                 else:
                     logger.debug(f"{edge.first_p}, {edge.last_p}")
 
-        all_points = []
+        edge_uv_points = dict()
+        edge_3d_points = dict()
         for edge, reverse in loop:
-            uv_points = edge.sample_points(10)
-            uv_points = map_points_to_uv(face, uv_points)
+            edge_points_3d = edge.sample_points(3)
+            uv_points = map_points_to_uv(face, edge_points_3d)
             if reverse:
                 uv_points = uv_points[::-1]
-            all_points.append(uv_points[:-1])  # last point is first of the next edge
-        loop_points.append(np.vstack(all_points))
+            edge_uv_points[edge.idx] = uv_points
+            edge_3d_points[edge.idx] = edge_points_3d
+
+        loop_points.append(edge_uv_points)
+        edge_points.append(edge_3d_points)
         break  # TODO: remove (we could have more than 1 loop)
 
     if len(loop_points) > 1:
         logger.error("Not handling multiple edge loops yet..")
         raise NotImplementedError
 
-    uv_points = loop_points[0]
+    # Create triangulation
+    loop = loop_points[0]  # TODO: for all loops
+    points_2d_dict = dict()
+    for key, uv_points in loop.items():
+        surface = BRep_Tool.Surface_s(face)
+        if isinstance(surface, Geom_ConicalSurface):
+            points_2d_dict[key] = get_2d_points_cone(uv_points)
+        else:
+            raise NotImplementedError
+
+    points_2d = np.vstack(list(points_2d_dict.values()))
     edges = np.array(
-        [(i, i + 1) for i in range(len(uv_points) - 1)] + [(len(uv_points) - 1, 0)]
+        [(i, i + 1) for i in range(len(points_2d) - 1)] + [(len(points_2d) - 1, 0)]
     )
 
-    # Create triangulation
-    triangulation = create_constrained_triangulation(uv_points, edges)
+    triangulation = create_constrained_triangulation(points_2d, edges)
     if not triangulation:
         raise ValueError("Triangulation Failed")
 
-    # debug = True
     if debug:
-        plot_triangulation(uv_points, edges, triangulation)
+        plt.figure()
+        for key, points in points_2d_dict.items():
+            plt.scatter(points[:, 0], points[:, 1], label=f"Edge {key}")
+
+        # Add labels, legend, and title
+        plt.xlabel("X-axis")
+        plt.ylabel("Y-axis")
+        plt.title("Scatter Plot of Points by Idx")
+        plt.legend()
+
+        # save the plot
+        plt.savefig("scatter_plot.png")
+
+        # save the triangulation
+        plot_triangulation(points_2d, edges, triangulation)
 
     # map back to 3d
-    vertices = triangulation["vertices"]
-    vertices_3d = map_uv_to_3d(face, vertices)
     triangles = triangulation["triangles"]
+    vertices = triangulation["vertices"]
+    uv_points = get_uv_points_from_2d(vertices)
+    # uv_points = np.column_stack((u, v))
+    vertices_3d = map_uv_to_3d(face, uv_points)
+
     # add edges for debugging
-    points_3d = map_uv_to_3d(face, uv_points)
-    curve_network = CurveNetwork(points=points_3d, edges=edges)
+    curve_network = CurveNetwork(points=vertices_3d, edges=edges)
     face_mesh = FaceMesh(
-        vertices=vertices_3d, triangles=triangles, boundary=curve_network
+        vertices=vertices_3d,
+        triangles=triangles,
+        boundary=curve_network
     )
     return face_mesh
 
@@ -100,12 +142,11 @@ def run(step_file: str) -> None:
         with contextlib.suppress(NotImplementedError):
             face_mesh = get_visualization(face, face_edge_map[idx])
             mesh[idx] = face_mesh
-        if idx == 42:
-            break
+        break
 
     ps.init()
     for idx, face_mesh in mesh.items():
-        # ps.register_curve_network(f"loop_{idx}", face_mesh.boundary.points, face_mesh.boundary.edges)
+        ps.register_curve_network(f"loop_{idx}", face_mesh.boundary.points, face_mesh.boundary.edges)
         ps.register_surface_mesh(
             f"face_{idx}", face_mesh.vertices, face_mesh.triangles, smooth_shade=True
         )
