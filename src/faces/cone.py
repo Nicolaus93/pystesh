@@ -6,19 +6,87 @@ from OCP.gp import gp_Pnt, gp_Vec
 from OCP.OCP.gp import gp_Ax1
 
 
-def get_2d_points_cone(uv_points):
+def get_2d_points_cone(uv_points, reference_radius, half_angle):
     theta = uv_points[:, 0]
-    r = uv_points[:, 1]
-    x = r * np.cos(theta)
-    y = r * np.sin(theta)
+    v = uv_points[:, 1]
+
+    # Following the parametric equation:
+    # P(u,v) = O + (R + v*sin(Ang))*(cos(u)*XDir + sin(u)*YDir) + v*cos(Ang)*ZDir
+    # For 2D projection, we only need the radius term: (R + v*sin(Ang))
+    radius = reference_radius + v * np.sin(half_angle)
+
+    x = radius * np.cos(theta)
+    y = radius * np.sin(theta)
     return np.stack((x, y)).T
 
 
-def get_uv_points_from_2d(points_2d):
-    theta = np.atan2(points_2d[:, 1], points_2d[:, 0]) % (np.pi * 2)
-    r = np.sqrt(points_2d[:, 0]**2 + points_2d[:, 1]**2)  # wrong, we need negative values as well
-    # return np.vstack((theta, r)).T
-    return theta, r
+def get_uv_points_from_2d(points_2d, reference_radius, half_angle):
+    """
+    Converts 2D points back to UV parameter space for a cone.
+
+    Args:
+        points_2d: numpy array of shape (N, 2) containing x,y coordinates
+        reference_radius: radius of the cone at the reference plane
+        half_angle: half-angle at the apex of the cone (in radians)
+
+    Returns:
+        numpy array of shape (N, 2) containing u,v coordinates
+        where u is angle [0, 2π] and v is distance along cone surface
+    """
+    # Calculate theta (u parameter)
+    theta = np.atan2(points_2d[:, 1], points_2d[:, 0]) % (2 * np.pi)
+
+    # Calculate radius from origin
+    radius = np.sqrt(points_2d[:, 0] ** 2 + points_2d[:, 1] ** 2)
+
+    # Solve for v using the radius equation:
+    # radius = reference_radius + v * sin(half_angle)
+    v = (radius - reference_radius) / np.sin(half_angle)
+
+    return np.stack((theta, v)).T
+
+
+# def get_uv_points_from_2d(points_2d):
+#     """
+#     1. Finds the angle θ using arctan2
+#     2. Creates a unit vector in that direction (cos(θ), sin(θ))
+#     If the original point was pointing in roughly the same direction as this unit vector (positive dot product),
+#     v should be positive. If the original point was pointing in roughly the opposite direction (negative dot product),
+#     v should be negative.
+#     This correctly recovers the original v value because in the forward transformation:
+#
+#     - A positive v creates a point in the same direction as (cos(θ), sin(θ))
+#     - A negative v creates a point in the opposite direction
+#     """
+#     theta = np.atan2(points_2d[:, 1], points_2d[:, 0]) % (2 * np.pi)
+#     v_magnitude = np.sqrt(points_2d[:, 0] ** 2 + points_2d[:, 1] ** 2)
+#
+#     # Determine the sign of v based on the direction of the point
+#     # If the point is in the same direction as the angle, v is positive; otherwise, it's negative
+#     x_direction = np.cos(theta)
+#     y_direction = np.sin(theta)
+#
+#     # Dot product to determine if the point is in the same direction as the angle
+#     dot_product = points_2d[:, 0] * x_direction + points_2d[:, 1] * y_direction
+#     v_sign = np.sign(dot_product)
+#
+#     v = v_magnitude * v_sign
+#
+#     return np.vstack((theta, v)).T
+
+
+def get_3d_points_from_2d(surface, points_2d):
+    uv_points = get_uv_points_from_2d(
+        points_2d=points_2d,
+        reference_radius=surface.Cone().RefRadius(),
+        half_angle=surface.Cone().SemiAngle(),
+    )
+    points_3d = []
+    for p in uv_points:
+        pnt = gp_Pnt()
+        surface.D0(p[0], p[1], pnt)
+        points_3d.append(pnt.Coord())
+    return np.array(points_3d)
 
 
 @dataclass
