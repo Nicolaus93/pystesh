@@ -1,20 +1,16 @@
 import numpy as np
+import numpy.typing as npt
 from OCP.OCP.BRep import BRep_Tool
 from OCP.OCP.GeomAPI import GeomAPI_ProjectPointOnSurf
 from OCP.OCP.gp import gp_Pnt
-from OCP.OCP.TopoDS import TopoDS_Face
 
 
 def map_points_to_uv(
-    face: TopoDS_Face,
-    points_3d: np.ndarray,
+    surface: BRep_Tool.Surface_s,
+    points_3d: npt.NDArray[np.floating],
     tolerance: float = 1e-6,
-    debug: bool = False,
-) -> np.ndarray:
+) -> npt.NDArray[np.floating]:
     """Map 3D points to (u, v) parametric coordinates on the B-spline surface."""
-    surface = BRep_Tool.Surface_s(
-        face
-    )  # Surface_s automatically handles the extraction of the correct surface type
     uv_coords = []
     for point in points_3d:
         pnt = gp_Pnt(point[0], point[1], point[2])
@@ -29,20 +25,19 @@ def map_points_to_uv(
     return np.array(uv_coords)
 
 
-def map_uv_to_3d(face: TopoDS_Face, uv_coords: np.ndarray) -> np.ndarray:
+def map_uv_to_3d(
+    surface: BRep_Tool.Surface_s, uv_coords: npt.NDArray[np.floating]
+) -> npt.NDArray[np.floating]:
     """
-    Map (u, v) parametric coordinates to 3D points on the B-spline surface.
+    Map (u, v) parametric coordinates to 3D points on the input surface.
 
     Args:
-        face: The TopoDS_Face representing the B-spline surface.
+        surface: input (sur)face
         uv_coords: A numpy array of shape (n, 2) containing (u, v) coordinates.
 
     Returns:
         A numpy array of shape (n, 3) containing the corresponding 3D points.
     """
-    # Extract the geometric surface from the TopoDS_Face
-    surface = BRep_Tool.Surface_s(face)
-
     # Map (u, v) to 3D
     points_3d = []
     for u, v in uv_coords:

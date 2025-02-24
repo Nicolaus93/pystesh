@@ -1,12 +1,12 @@
-from dataclasses import dataclass
-
 import numpy as np
+import numpy.typing as npt
 from OCP.Geom import Geom_ConicalSurface
 from OCP.gp import gp_Pnt, gp_Vec
-from OCP.OCP.gp import gp_Ax1
 
 
-def get_2d_points_cone(uv_points, reference_radius, half_angle):
+def get_2d_points_cone(
+    uv_points: npt.NDArray[np.floating], reference_radius: float, half_angle: float
+) -> npt.NDArray[np.floating]:
     theta = uv_points[:, 0]
     v = uv_points[:, 1]
 
@@ -20,7 +20,9 @@ def get_2d_points_cone(uv_points, reference_radius, half_angle):
     return np.stack((x, y)).T
 
 
-def get_uv_points_from_2d(points_2d, reference_radius, half_angle):
+def get_uv_points_from_2d(
+    points_2d: npt.NDArray[np.floating], reference_radius: float, half_angle: float
+) -> npt.NDArray[np.floating]:
     """
     Converts 2D points back to UV parameter space for a cone.
 
@@ -46,35 +48,6 @@ def get_uv_points_from_2d(points_2d, reference_radius, half_angle):
     return np.stack((theta, v)).T
 
 
-# def get_uv_points_from_2d(points_2d):
-#     """
-#     1. Finds the angle θ using arctan2
-#     2. Creates a unit vector in that direction (cos(θ), sin(θ))
-#     If the original point was pointing in roughly the same direction as this unit vector (positive dot product),
-#     v should be positive. If the original point was pointing in roughly the opposite direction (negative dot product),
-#     v should be negative.
-#     This correctly recovers the original v value because in the forward transformation:
-#
-#     - A positive v creates a point in the same direction as (cos(θ), sin(θ))
-#     - A negative v creates a point in the opposite direction
-#     """
-#     theta = np.atan2(points_2d[:, 1], points_2d[:, 0]) % (2 * np.pi)
-#     v_magnitude = np.sqrt(points_2d[:, 0] ** 2 + points_2d[:, 1] ** 2)
-#
-#     # Determine the sign of v based on the direction of the point
-#     # If the point is in the same direction as the angle, v is positive; otherwise, it's negative
-#     x_direction = np.cos(theta)
-#     y_direction = np.sin(theta)
-#
-#     # Dot product to determine if the point is in the same direction as the angle
-#     dot_product = points_2d[:, 0] * x_direction + points_2d[:, 1] * y_direction
-#     v_sign = np.sign(dot_product)
-#
-#     v = v_magnitude * v_sign
-#
-#     return np.vstack((theta, v)).T
-
-
 def get_3d_points_from_2d(surface, points_2d):
     uv_points = get_uv_points_from_2d(
         points_2d=points_2d,
@@ -87,60 +60,6 @@ def get_3d_points_from_2d(surface, points_2d):
         surface.D0(p[0], p[1], pnt)
         points_3d.append(pnt.Coord())
     return np.array(points_3d)
-
-
-@dataclass
-class ConeParams:
-    """
-    A cone is a ruled surface, and its natural parameterization is typically in terms of:
-    - u: The angular parameter (around the axis of the cone).
-    - v: The height parameter (along the axis of the cone).
-
-    The parametric equations for a cone (centered at the origin and aligned with the z-axis) are:
-
-    x=(R+v⋅tan(α))⋅cos(u)
-    y=(R+v⋅tan(α))⋅sin(u)
-    z=v
-
-    Where:
-    - R is the base radius of the cone.
-    - α is the half-angle of the cone.
-    - u ranges from 0 to 2π (angular parameter).
-    - v ranges from 0 to the height of the cone.
-
-    To get a point from 3d to uv:
-    v=z
-    y/x = tan(u) => u = atan(y/x)
-    """
-
-    axis: gp_Ax1
-    apex: gp_Pnt
-    radius: float
-    half_angle: float
-
-
-def get_occt_reference_direction(cone_surface: Geom_ConicalSurface) -> gp_Vec:
-    """
-    Get the reference direction used by OCCT for parameterizing the cone.
-
-    Args:
-        cone_surface: The Geom_ConicalSurface representing the cone.
-
-    Returns:
-        ref_dir: The reference direction (u = 0) as a gp_Vec.
-    """
-    # Evaluate the cone at u = 0, v = 0
-    u = 0.0
-    v = 0.0
-    pnt = gp_Pnt()
-    cone_surface.D0(u, v, pnt)
-
-    # Vector from apex to the point at u = 0
-    apex = cone_surface.Cone().Apex()
-    ref_dir = gp_Vec(apex, pnt)
-    ref_dir.Normalize()  # Normalize to make it a unit vector
-
-    return ref_dir
 
 
 def project_point_to_uv(surface: Geom_ConicalSurface, point_3d: gp_Pnt):

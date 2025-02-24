@@ -9,6 +9,7 @@ import polyscope as ps
 from loguru import logger
 from OCP.BRep import BRep_Tool
 from OCP.Geom import Geom_ConicalSurface
+from OCP.OCP.Geom import Geom_Plane
 from OCP.OCP.IFSelect import IFSelect_ReturnStatus
 from OCP.OCP.STEPControl import STEPControl_Reader
 
@@ -18,7 +19,7 @@ from src.faces.cone import (
     get_3d_points_from_2d,
 )
 from src.faces.get_edges import get_edge_loops, get_edges
-from src.faces.utils import map_points_to_uv
+from src.faces.utils import map_points_to_uv, map_uv_to_3d
 
 
 @dataclass
@@ -137,15 +138,16 @@ def get_fast_visualization(face, edges, debug: bool = False) -> FaceMesh:
 
     surface = BRep_Tool.Surface_s(face)
     loop_uv_points = []
-    for loop in edge_loops:
+    for loop_idx, loop in enumerate(edge_loops):
         for edge, reverse in loop:
             edge_points_3d = edge.sample_points(3)
-            uv_points = map_points_to_uv(face, edge_points_3d)
+            uv_points = map_points_to_uv(surface, edge_points_3d)
             if reverse:
                 uv_points = uv_points[::-1]
             loop_uv_points.append(uv_points)
 
-        break  # TODO: remove (we could have more than 1 loop)
+    if loop_idx > 0:
+        raise NotImplementedError
 
     if isinstance(surface, Geom_ConicalSurface):
         loop_2d_points = get_2d_points_cone(
@@ -153,6 +155,8 @@ def get_fast_visualization(face, edges, debug: bool = False) -> FaceMesh:
             reference_radius=surface.Cone().RefRadius(),
             half_angle=surface.Cone().SemiAngle(),
         )
+    elif isinstance(surface, Geom_Plane):
+        loop_2d_points = np.vstack(loop_uv_points)
     else:
         raise NotImplementedError
 
@@ -176,7 +180,6 @@ def get_fast_visualization(face, edges, debug: bool = False) -> FaceMesh:
 
     triangles = np.array([t.vertices for t in triangulation.triangles])
     vertices_2d = np.array([(v.x, v.y) for v in triangulation.vertices])
-    debug = True
     if debug:
         temp = [
             get_2d_points_cone(
@@ -190,6 +193,8 @@ def get_fast_visualization(face, edges, debug: bool = False) -> FaceMesh:
 
     if isinstance(surface, Geom_ConicalSurface):
         vertices_3d = get_3d_points_from_2d(surface, vertices_2d)
+    elif isinstance(surface, Geom_Plane):
+        vertices_3d = map_uv_to_3d(surface, vertices_2d)
     else:
         raise NotImplementedError
     return FaceMesh(vertices=vertices_3d, triangles=triangles, boundary=None)
@@ -212,10 +217,11 @@ def run(step_file: str) -> None:
     for idx, face in enumerate(faces):
         logger.info(f"Meshing face {idx}")
         with contextlib.suppress(NotImplementedError):
-            # face_mesh = get_visualization(face, face_edge_map[idx])
             face_mesh = get_fast_visualization(face, face_edge_map[idx])
             mesh[idx] = face_mesh
-        break
+        logger.info(f"Done face {idx}")
+        if idx > 3:
+            break
 
     ps.init()
     for idx, face_mesh in mesh.items():
