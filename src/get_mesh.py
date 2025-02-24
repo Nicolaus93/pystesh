@@ -1,5 +1,6 @@
 import contextlib
 from argparse import ArgumentParser
+from collections import defaultdict
 from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
@@ -131,64 +132,78 @@ def plot_edge_points(points_2d):
 
 def get_fast_visualization(face, edges, debug: bool = False) -> FaceMesh:
     edge_loops = get_edge_loops(edges)
-
-    if len(edge_loops) > 1:
-        logger.error("Not handling multiple edge loops yet..")
-        raise NotImplementedError
+    if len(edge_loops) > 2:
+        raise ValueError
 
     surface = BRep_Tool.Surface_s(face)
-    loop_uv_points = []
+    loop_uv_points = defaultdict(list)
     for loop_idx, loop in enumerate(edge_loops):
         for edge, reverse in loop:
             edge_points_3d = edge.sample_points(3)
             uv_points = map_points_to_uv(surface, edge_points_3d)
             if reverse:
                 uv_points = uv_points[::-1]
-            loop_uv_points.append(uv_points)
+            loop_uv_points[loop_idx].append(uv_points)
 
-    if loop_idx > 0:
-        raise NotImplementedError
-
-    if isinstance(surface, Geom_ConicalSurface):
-        loop_2d_points = get_2d_points_cone(
-            uv_points=np.vstack(loop_uv_points),
-            reference_radius=surface.Cone().RefRadius(),
-            half_angle=surface.Cone().SemiAngle(),
+    edges = []
+    points = []
+    for loop_idx, group in loop_uv_points.items():
+        temp = np.vstack(group)
+        if isinstance(surface, Geom_ConicalSurface):
+            loop_2d_points = get_2d_points_cone(
+                uv_points=temp,
+                reference_radius=surface.Cone().RefRadius(),
+                half_angle=surface.Cone().SemiAngle(),
+            )
+        elif isinstance(surface, Geom_Plane):
+            loop_2d_points = temp
+        else:
+            raise NotImplementedError
+        unique_2d_points, idx = np.unique(
+            np.round(loop_2d_points, 3), axis=0, return_index=True
         )
-    elif isinstance(surface, Geom_Plane):
-        loop_2d_points = np.vstack(loop_uv_points)
-    else:
-        raise NotImplementedError
+        unique_2d_points = unique_2d_points[np.argsort(idx)]
+        points.append(unique_2d_points)
+        offset = len(edges)
+        new_edges = (
+            np.array(
+                [(i, i + 1) for i in range(len(unique_2d_points) - 1)]
+                + [(len(unique_2d_points) - 1, 0)],
+                dtype=np.uintc,
+            )
+            + offset
+        )
+        edges.append(new_edges)
 
-    unique_2d_points, idx = np.unique(
-        np.round(loop_2d_points, 3), axis=0, return_index=True
-    )
-    unique_2d_points = unique_2d_points[np.argsort(idx)]
-    edges = np.array(
-        [(i, i + 1) for i in range(len(unique_2d_points) - 1)]
-        + [(len(unique_2d_points) - 1, 0)],
-        dtype=np.uintc,
-    )
+    points = np.vstack(points)
+    edges = np.vstack(edges)
     triangulation = cdt.Triangulation(
         cdt.VertexInsertionOrder.AS_PROVIDED,
-        cdt.IntersectingConstraintEdges.NOT_ALLOWED,
+        cdt.IntersectingConstraintEdges.TRY_RESOLVE,
         0.0,
     )
-    triangulation.insert_vertices(unique_2d_points)
+    triangulation.insert_vertices(points)
     triangulation.insert_edges(edges)
     triangulation.erase_outer_triangles()
 
     triangles = np.array([t.vertices for t in triangulation.triangles])
     vertices_2d = np.array([(v.x, v.y) for v in triangulation.vertices])
     if debug:
-        temp = [
-            get_2d_points_cone(
-                p, surface.Cone().RefRadius(), surface.Cone().SemiAngle()
-            )
-            for p in loop_uv_points
-        ]
+        if isinstance(surface, Geom_ConicalSurface):
+            temp = [
+                get_2d_points_cone(
+                    edge, surface.Cone().RefRadius(), surface.Cone().SemiAngle()
+                )
+                for k, group in loop_uv_points.items()
+                for edge in group
+            ]
+        elif isinstance(surface, Geom_Plane):
+            temp = [edge for k, group in loop_uv_points.items() for edge in group]
+        else:
+            raise NotImplementedError
+
         plot_edge_points(temp)
-        plot_points_with_edges(unique_2d_points)
+        plot_points_with_edges(points)
         plot_triangulation(triangles, vertices_2d)
 
     if isinstance(surface, Geom_ConicalSurface):

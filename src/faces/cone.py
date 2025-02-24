@@ -1,7 +1,6 @@
 import numpy as np
 import numpy.typing as npt
-from OCP.Geom import Geom_ConicalSurface
-from OCP.gp import gp_Pnt, gp_Vec
+from OCP.gp import gp_Pnt
 
 
 def get_2d_points_cone(

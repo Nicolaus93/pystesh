@@ -127,41 +127,49 @@ def get_edges(shape: TopoDS_Shape) -> tuple[list[TopoDS.Face_s], dict[int, list[
 
 def get_edge_loops(edges: list[Edge]) -> list[list[tuple[Edge, bool]]]:
     graph: dict[Vec3d, list[tuple[Vec3d, Edge]]] = defaultdict(list)
-    for idx, edge in enumerate(edges):
+    for edge in edges:
         graph[edge.first_p].append((edge.last_p, edge))
         graph[edge.last_p].append((edge.first_p, edge))
 
-    # -------
-    # |     |
-    # |     |
-    # -------
-
     edge_loops: list[list[tuple[Edge, bool]]] = []
-    current = next(iter(graph.keys()))
-    loop = []
-    visited = {current}
-    while True:
-        has_next = False
-        neighs = graph[current]
-        for pnt, edge in neighs:
-            if pnt not in visited:
-                has_next = True
-                current = pnt
-                visited.add(current)
-                # check edge orientation
-                if current == edge.first_p:
-                    loop.append((edge, True))
-                else:
-                    loop.append((edge, False))
-                break
-        if not has_next:
-            break
-    # add last edge
-    edge = next(e for p, e in graph[current] if e not in loop)
-    if current == edge.first_p:
-        loop.append((edge, False))
-    else:
-        loop.append((edge, True))
+    visited_edges = set()
 
-    edge_loops.append(loop)
+    for start_point in graph:
+        if not graph[start_point]:
+            continue
+
+        current = start_point
+        while len(visited_edges) < len(edges):
+            loop = []
+            visited_points = {current}
+
+            # Explore the loop starting from the current point
+            while True:
+                has_next = False
+                neighs = graph[current]
+                for pnt, edge in neighs:
+                    if edge not in visited_edges:
+                        has_next = True
+                        current = pnt
+                        visited_points.add(current)
+                        visited_edges.add(edge)
+                        # Check edge orientation
+                        if current == edge.first_p:
+                            loop.append((edge, True))
+                        else:
+                            loop.append((edge, False))
+                        break
+
+                if not has_next:
+                    break
+
+            if loop:
+                edge_loops.append(loop)
+
+            # Move to the next unvisited point
+            unvisited_points = [p for p in graph if p not in visited_points]
+            if not unvisited_points:
+                break
+            current = unvisited_points[0]
+
     return edge_loops
