@@ -1,4 +1,3 @@
-import contextlib
 from argparse import ArgumentParser
 from collections import defaultdict
 from dataclasses import dataclass
@@ -9,10 +8,9 @@ import numpy.typing as npt
 import polyscope as ps
 from loguru import logger
 from OCP.BRep import BRep_Tool
-from OCP.Geom import Geom_ConicalSurface
-from OCP.OCP.Geom import Geom_Plane
+from OCP.Geom import Geom_BSplineSurface, Geom_ConicalSurface, Geom_Plane
 from OCP.OCP.IFSelect import IFSelect_ReturnStatus
-from OCP.OCP.STEPControl import STEPControl_Reader
+from OCP.OCP.STEPControl import STEPControl_AsIs, STEPControl_Reader, STEPControl_Writer
 
 import PythonCDT as cdt
 from src.faces.cone import (
@@ -82,12 +80,13 @@ def plot_triangulation(triangles: np.ndarray, vertices: np.ndarray) -> None:
     plt.savefig("triang.png")
 
 
-def plot_points_with_edges(points: np.ndarray) -> None:
+def plot_points_with_edges(points: np.ndarray, edges: list) -> None:
     """
-    Plot 2D points and connect each point to the next one with a line edge.
+    Plot 2D points and connect specified points with line edges.
 
     Parameters:
     - points: An Nx2 numpy array of floats, where each row represents the coordinates of a point in 2D space.
+    - edges: A list of tuples, where each tuple contains the indices of two points to be connected by an edge.
     """
     # Create a new figure
     fig, ax = plt.subplots()
@@ -95,14 +94,12 @@ def plot_points_with_edges(points: np.ndarray) -> None:
     # Plot the points
     ax.plot(points[:, 0], points[:, 1], "ro")  # 'ro' for red dots
 
-    # Plot the edges (lines connecting each point to the next)
-    for i in range(len(points) - 1):
+    # Plot the edges (lines connecting specified points)
+    for edge in edges:
+        start, end = edge
         ax.plot(
-            [points[i, 0], points[i + 1, 0]], [points[i, 1], points[i + 1, 1]], "b-"
+            [points[start, 0], points[end, 0]], [points[start, 1], points[end, 1]], "b-"
         )  # 'b-' for blue lines
-
-    # Optionally, connect the last point back to the first point to close the shape
-    ax.plot([points[-1, 0], points[0, 0]], [points[-1, 1], points[0, 1]], "b-")
 
     # Set labels for the axes
     ax.set_xlabel("X")
@@ -130,17 +127,37 @@ def plot_edge_points(points_2d):
     plt.savefig("scatter_plot.png")
 
 
-def get_fast_visualization(face, edges, debug: bool = False) -> FaceMesh:
+def get_face_mesh(face, edges, idx: int, debug: bool = False) -> FaceMesh:
     edge_loops = get_edge_loops(edges)
-    if len(edge_loops) > 2:
-        raise ValueError
+    if len(edge_loops) > 3:
+        if debug:
+            # Create a STEP writer
+            step_writer = STEPControl_Writer()
+
+            # Add the shape to the STEP writer
+            step_writer.Transfer(face, STEPControl_AsIs)
+            output_file = f"/tmp/face_{idx}.step"
+            status = step_writer.Write(output_file)
+
+            # # Check if the export was successful
+            # if status == IFSelect_ReturnStatus.IFSelect_RetDone:
+            #     print(f"STEP file '{output_file}' successfully exported.")
+            # else:
+            #     print("Failed to export STEP file.")
+
+        raise ValueError(f"Face {idx} contains {len(edge_loops)} edge loops!")
 
     surface = BRep_Tool.Surface_s(face)
+    if isinstance(surface, Geom_BSplineSurface):
+        raise NotImplementedError
+
     loop_uv_points = defaultdict(list)
     for loop_idx, loop in enumerate(edge_loops):
         for edge, reverse in loop:
             edge_points_3d = edge.sample_points(3)
-            uv_points = map_points_to_uv(surface, edge_points_3d)
+            uv_points = map_points_to_uv(
+                surface, edge_points_3d
+            )  # TODO: extremely slow for Bspline surfaces
             if reverse:
                 uv_points = uv_points[::-1]
             loop_uv_points[loop_idx].append(uv_points)
@@ -164,7 +181,7 @@ def get_fast_visualization(face, edges, debug: bool = False) -> FaceMesh:
         )
         unique_2d_points = unique_2d_points[np.argsort(idx)]
         points.append(unique_2d_points)
-        offset = len(edges)
+        offset = len(edges[-1]) if edges else 0
         new_edges = (
             np.array(
                 [(i, i + 1) for i in range(len(unique_2d_points) - 1)]
@@ -184,7 +201,7 @@ def get_fast_visualization(face, edges, debug: bool = False) -> FaceMesh:
     )
     triangulation.insert_vertices(points)
     triangulation.insert_edges(edges)
-    triangulation.erase_outer_triangles()
+    triangulation.erase_outer_triangles_and_holes()
 
     triangles = np.array([t.vertices for t in triangulation.triangles])
     vertices_2d = np.array([(v.x, v.y) for v in triangulation.vertices])
@@ -203,7 +220,7 @@ def get_fast_visualization(face, edges, debug: bool = False) -> FaceMesh:
             raise NotImplementedError
 
         plot_edge_points(temp)
-        plot_points_with_edges(points)
+        plot_points_with_edges(points, edges)
         plot_triangulation(triangles, vertices_2d)
 
     if isinstance(surface, Geom_ConicalSurface):
@@ -231,12 +248,14 @@ def run(step_file: str) -> None:
     mesh = dict()
     for idx, face in enumerate(faces):
         logger.info(f"Meshing face {idx}")
-        with contextlib.suppress(NotImplementedError):
-            face_mesh = get_fast_visualization(face, face_edge_map[idx])
+        try:
+            face_mesh = get_face_mesh(face, face_edge_map[idx], idx)
             mesh[idx] = face_mesh
-        logger.info(f"Done face {idx}")
-        if idx > 3:
-            break
+            logger.info(f"Done face {idx}")
+        except NotImplementedError:
+            logger.info(f"Skipped face {idx}")
+        # if idx > 40:
+        #     break
 
     ps.init()
     for idx, face_mesh in mesh.items():
