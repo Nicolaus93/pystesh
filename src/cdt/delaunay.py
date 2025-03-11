@@ -37,79 +37,6 @@ def point_inside_triangle(
         return False
 
 
-def find_containing_triangle(triangles, point, last_triangle_idx=None):
-    """
-    Implementation of Lawson's algorithm to find the triangle containing a point.
-    Starts from the most recently added triangle (if provided) and "walks" towards the point.
-    """
-    if not triangles:
-        return None
-
-    # Start from the last added triangle if provided, otherwise start from the first triangle
-    current_idx = last_triangle_idx if last_triangle_idx is not None else 0
-
-    # Keep track of visited triangles to avoid cycles
-    visited = {current_idx}
-
-    it = 0
-    while True:
-        print(it)
-        triangle = triangles[current_idx]
-
-        # Check if the point is inside this triangle
-        if point_inside_triangle(triangle, point):
-            return current_idx
-
-        # If not inside, find which edge to cross
-        a, b, c = triangle
-        edges = [(a, b), (b, c), (c, a)]
-        next_idx = None
-
-        for i, (v1, v2) in enumerate(edges):
-            # Vector from edge to point
-            edge_vector = v2 - v1
-            point_vector = point - v1
-
-            # If cross product is negative, the point is on the "outside" of this edge
-            if np.cross(edge_vector, point_vector) < 0:
-                # Find the adjacent triangle that shares this edge
-                adjacent_idx = find_adjacent_triangle(triangles, current_idx, (v1, v2))
-
-                if adjacent_idx is not None and adjacent_idx not in visited:
-                    next_idx = adjacent_idx
-                    visited.add(adjacent_idx)
-                    break
-        it += 1
-
-        if next_idx is None:
-            # If we can't find a next triangle, return the closest one we've found
-            return current_idx
-
-        current_idx = next_idx
-
-
-def find_adjacent_triangle(triangles, triangle_idx, edge):
-    """Find the index of the triangle adjacent to the given triangle across the specified edge."""
-    v1, v2 = edge
-    for i, triangle in enumerate(triangles):
-        if i == triangle_idx:
-            continue
-
-        # Check if the triangle contains the edge (in either direction)
-        edges = [
-            (triangle[0], triangle[1]),
-            (triangle[1], triangle[2]),
-            (triangle[2], triangle[0]),
-        ]
-        for e1, e2 in edges:
-            if (np.array_equal(e1, v1) and np.array_equal(e2, v2)) or (
-                np.array_equal(e1, v2) and np.array_equal(e2, v1)
-            ):
-                return i
-
-    return None
-
-
 def in_circumcircle(triangle, point):
     """
     Check if a point lies inside the circumcircle of a triangle.
@@ -145,9 +72,75 @@ def in_circumcircle(triangle, point):
     return det > 0
 
 
-def triangulate(points: NDArray[np.floating]):
+def find_containing_triangle(
+    all_points: NDArray[np.floating],
+    triangle_vertices: NDArray[np.integer],
+    triangle_neighbors: NDArray[np.integer],
+    point: NDArray[np.floating],
+    last_triangle_idx: int,
+) -> int:
     """
-    Implement Delaunay triangulation using the incremental algorithm.
+    Implementation of Lawson's algorithm to find the triangle containing a point.
+    Starts from the most recently added triangle and "walks" towards the point.
+    Uses the adjacency information from triangle_neighbors to improve efficiency.
+
+    Parameters:
+    - all_points: Array of all point coordinates
+    - triangle_vertices: Matrix where each column contains vertex indices of a triangle
+    - triangle_neighbors: Matrix where each column contains adjacent triangle indices
+    - point: The point to locate
+    - last_triangle_idx: Index of the last formed triangle (starting point for search)
+
+    Returns:
+    - Index of the triangle containing the point, or None if not found
+    """
+    if triangle_vertices.shape[1] == 0 or last_triangle_idx < 0:
+        raise ValueError
+
+    # Start from the last added triangle
+    triangle_idx = last_triangle_idx
+
+    # Keep track of visited triangles to avoid cycles
+    visited = {triangle_idx}
+    while True:
+        # Get the current triangle vertices
+        v_indices = triangle_vertices[triangle_idx]
+        triangle = all_points[v_indices]
+
+        # Check if the point is inside this triangle
+        if point_inside_triangle(triangle, point):
+            return triangle_idx
+
+        # If not inside, find which edge to cross using the adjacent triangles information
+        edges = [(0, 1), (1, 2), (2, 0)]  # Edge indices in the triangle
+        next_idx = None
+        for i, (e1, e2) in enumerate(edges):
+            # Vector from edge to point
+            edge_vector = triangle[e2] - triangle[e1]
+            point_vector = point - triangle[e1]
+
+            # If cross product is negative, the point is on the "outside" of this edge
+            if np.cross(edge_vector, point_vector) < 0:
+                # Get the adjacent triangle for this edge
+                adjacent_idx = triangle_neighbors[triangle_idx, i]
+
+                # If there's an adjacent triangle (not a boundary) and we haven't visited it
+                if adjacent_idx != 0 and adjacent_idx not in visited:
+                    next_idx = adjacent_idx
+                    visited.add(adjacent_idx)
+                    break
+
+        if next_idx is None:
+            raise ValueError(f"Couldn't find a triangle containing {point}")
+        triangle_idx = next_idx
+
+
+def get_sorted_points(
+    points: NDArray[np.floating],
+) -> tuple[NDArray[np.floating], NDArray[np.integer]]:
+    """
+
+    :param points: input points
     """
     # Find the min and max along each axis (x and y)
     min_vals = np.min(points, axis=0)
@@ -174,177 +167,254 @@ def triangulate(points: NDArray[np.floating]):
 
     # Sort the points by their bin numbers
     sorted_indices = np.argsort(bin_numbers)
-    sorted_points = points[sorted_indices]
+    sorted_points = normalized_points[sorted_indices]
 
-    # Step 3: Establish the supertriangle
-    # Create a triangle that encompasses all points
-    margin = 10  # Extra margin to ensure all points are inside
-    supertriangle = np.array(
+    return sorted_points, sorted_indices
+
+
+def find_adjacent_edge(
+    triangle_neighbors: NDArray[np.integer],
+    neigh_idx: int,
+    containing_triangle_idx: int,
+    new_triangle_idx1: int,
+    new_triangle_idx2: int,
+) -> NDArray[np.integer]:
+    """
+    neigh_idx is the index of a neighbor of the containing triangle.
+
+    """
+    if neigh_idx != 0:
+        # Find the edge in neigh_idx triangle that's adjacent to the containing triangle
+        # and update its neighbor to the new triangle
+        found_edge = False
+        for i in range(3):
+            if triangle_neighbors[neigh_idx, i] == containing_triangle_idx:
+                triangle_neighbors[neigh_idx, i] = new_triangle_idx1
+                found_edge = True
+                break
+
+        if not found_edge:
+            raise ValueError
+
+    return np.vstack(
+        [triangle_neighbors, [neigh_idx, new_triangle_idx2, containing_triangle_idx]]
+    )
+
+
+def triangulate(points: NDArray[np.floating]):
+    """
+    Implement Delaunay triangulation using the incremental algorithm with efficient
+    adjacency tracking using two matrices:
+    - triangle_vertices: 3xT matrix where each column represents the vertex indices of a triangle
+    - triangle_neighbors: 3xT matrix where each column represents the adjacent triangle indices
+    """
+    sorted_points, sorted_indices = get_sorted_points(points)
+
+    # Step 3: Establish the super-triangle
+    # Create a triangle that encompasses all points (in 0-1)
+    margin: float = 10.0  # Extra margin to ensure all points are inside
+    super_vertices = np.array(
         [
-            [min_vals[0] - margin, min_vals[1] - margin],
-            [max_vals[0] + margin, min_vals[1] - margin],
-            [(min_vals[0] + max_vals[0]) / 2, max_vals[1] + margin],
+            [-margin, -margin],
+            [margin, -margin],
+            [0.5, margin],
         ]
     )
 
-    triangles = [supertriangle]
+    # Add super-triangle vertices to the points array
+    all_points = np.vstack([sorted_points, super_vertices])
+
+    n_original_points = len(points)
+
+    # Initial triangle is the super-triangle
+    # Vertex indices are n_original_points, n_original_points+1, n_original_points+2
+    triangle_vertices = np.array(
+        [[n_original_points, n_original_points + 1, n_original_points + 2]]
+    )
+
+    # Initial triangle has no neighbors (all boundaries)
+    triangle_neighbors = np.zeros(3, dtype=int)
     last_triangle_idx = 0
 
     # Step 4-7: Loop over each point and insert into triangulation
-    for point in sorted_points:
+    for point_idx, point in enumerate(sorted_points):
         # Step 5: Find the triangle containing the point
-        containing_idx = find_containing_triangle(triangles, point, last_triangle_idx)
-
-        if containing_idx is None:
-            continue  # Skip if no containing triangle found (shouldn't happen with proper supertriangle)
-
-        containing_triangle = triangles[containing_idx]
-
-        # Delete the containing triangle
-        triangles.pop(containing_idx)
+        containing_idx = find_containing_triangle(
+            all_points, triangle_vertices, triangle_neighbors, point, last_triangle_idx
+        )
 
         # Get vertices of the containing triangle
-        v1, v2, v3 = containing_triangle
+        v1_idx, v2_idx, v3_idx = triangle_vertices[containing_idx]
 
         # Create three new triangles by connecting point to each vertex
-        new_triangles = [
-            np.array([point, v1, v2]),
-            np.array([point, v2, v3]),
-            np.array([point, v3, v1]),
+        # The new triangles will replace the containing triangle and add two more
+        # First, replace the containing triangle with the first new triangle
+        triangle_vertices[containing_idx] = [point_idx, v1_idx, v2_idx]
+
+        # Then add two more triangles
+        triangle_vertices = np.vstack(
+            (
+                triangle_vertices,
+                [point_idx, v2_idx, v3_idx],
+                [point_idx, v3_idx, v1_idx],
+            )
+        )
+
+        # Update triangle count
+        triangle_count = len(triangle_vertices)
+        new_triangle_idx1 = triangle_count - 2
+        new_triangle_idx2 = triangle_count - 1
+
+        # Get neighboring triangles of the containing triangle
+        neigh_idx1, neigh_idx2, neigh_idx3 = triangle_neighbors[containing_idx]
+
+        # Update neighbors for the new triangles
+        # First, new triangle (the one that replaced the containing triangle)
+        triangle_neighbors[containing_idx] = [
+            neigh_idx1,
+            new_triangle_idx1,
+            new_triangle_idx2,
         ]
 
-        # Add the new triangles
-        triangles.extend(new_triangles)
+        # Second new triangle
+        triangle_neighbors = find_adjacent_edge(
+            triangle_neighbors=triangle_neighbors,
+            neigh_idx=neigh_idx2,
+            containing_triangle_idx=containing_idx,
+            new_triangle_idx1=new_triangle_idx1,
+            new_triangle_idx2=new_triangle_idx2,
+        )
+
+        # Third new triangle
+        triangle_neighbors = find_adjacent_edge(
+            triangle_neighbors=triangle_neighbors,
+            neigh_idx=neigh_idx3,
+            containing_triangle_idx=containing_idx,
+            new_triangle_idx1=new_triangle_idx2,  # NB: swapped compared to second triangle
+            new_triangle_idx2=new_triangle_idx1,  # NB: swapped compared to second triangle
+        )
 
         # Step 6: Initialize stack for edge flipping
-        # Find triangles adjacent to edges opposite to the new point
+        # Add potentially affected edges to the stack
         stack = []
 
-        # For each new triangle, find its opposite triangle (if any)
-        for i in range(len(triangles) - 3, len(triangles)):
-            new_triangle = triangles[i]
-
-            # Find the edge opposite to the new point
-            for j in range(3):
-                if not np.array_equal(new_triangle[j], point):
-                    edge = (new_triangle[j], new_triangle[(j + 1) % 3])
-
-                    # Find the adjacent triangle
-                    for k in range(len(triangles)):
-                        if k != i:
-                            adjacent_triangle = triangles[k]
-
-                            # Check if the adjacent triangle contains this edge
-                            for m in range(3):
-                                edge_adj = (
-                                    adjacent_triangle[m],
-                                    adjacent_triangle[(m + 1) % 3],
-                                )
-                                if (
-                                    np.array_equal(edge[0], edge_adj[1])
-                                    and np.array_equal(edge[1], edge_adj[0])
-                                ) or (
-                                    np.array_equal(edge[0], edge_adj[0])
-                                    and np.array_equal(edge[1], edge_adj[1])
-                                ):
-                                    stack.append((i, k))
-                                    break
+        if neigh_idx1 != 0:
+            stack.append((containing_idx, neigh_idx1))
+        if neigh_idx2 != 0:
+            stack.append((new_triangle_idx1, neigh_idx2))
+        if neigh_idx3 != 0:
+            stack.append((new_triangle_idx2, neigh_idx3))
 
         # Step 7: Restore Delaunay triangulation (edge flipping)
         while stack:
             t1_idx, t2_idx = stack.pop()
 
-            # Get the triangles
-            t1 = triangles[t1_idx]
-            t2 = triangles[t2_idx]
+            # Find the vertex in t1 that's not in t2
+            v1_idx, v2_idx, v3_idx = triangle_vertices[:, t1_idx]
+            t2_vertices = set(triangle_vertices[:, t2_idx])
 
-            # Find the shared edge
+            # Find the non-shared vertex in t1
+            if v1_idx not in t2_vertices:
+                p1_idx = v1_idx
+            elif v2_idx not in t2_vertices:
+                p1_idx = v2_idx
+            else:
+                p1_idx = v3_idx
+
+            # Find the non-shared vertex in t2
+            v1_idx, v2_idx, v3_idx = triangle_vertices[:, t2_idx]
+            t1_vertices = set(triangle_vertices[:, t1_idx])
+
+            if v1_idx not in t1_vertices:
+                p2_idx = v1_idx
+            elif v2_idx not in t1_vertices:
+                p2_idx = v2_idx
+            else:
+                p2_idx = v3_idx
+
+            # Find the shared edge vertices
             shared_vertices = []
-            for v1 in t1:
-                for v2 in t2:
-                    if np.array_equal(v1, v2):
-                        shared_vertices.append(v1)
+            for v_idx in triangle_vertices[:, t1_idx]:
+                if v_idx in t2_vertices:
+                    shared_vertices.append(v_idx)
 
-            if len(shared_vertices) != 2:
-                continue  # Not exactly 2 shared vertices, skip
-
-            # Find the non-shared vertices
-            v1 = None
-            for v in t1:
-                if not any(np.array_equal(v, sv) for sv in shared_vertices):
-                    v1 = v
-                    break
-
-            v2 = None
-            for v in t2:
-                if not any(np.array_equal(v, sv) for sv in shared_vertices):
-                    v2 = v
-                    break
+            # Get the actual points for in_circumcircle test
+            p1 = all_points[p1_idx]
+            p2 = all_points[p2_idx]
+            s1 = all_points[shared_vertices[0]]
+            s2 = all_points[shared_vertices[1]]
 
             # Check if edge flip is needed (Delaunay condition)
-            if in_circumcircle(t2, v1):
-                # Swap the diagonal
-                new_t1 = np.array([v1, v2, shared_vertices[0]])
-                new_t2 = np.array([v1, v2, shared_vertices[1]])
+            if in_circumcircle(np.array([p2, s1, s2]), p1):
+                # We need to flip the edge
 
-                # Replace the old triangles
-                triangles[t1_idx] = new_t1
-                triangles[t2_idx] = new_t2
+                # Update the vertex indices of the triangles
+                triangle_vertices[:, t1_idx] = [p1_idx, p2_idx, shared_vertices[0]]
+                triangle_vertices[:, t2_idx] = [p1_idx, p2_idx, shared_vertices[1]]
 
-                # Add potentially affected triangles to the stack
-                for i, triangle in enumerate(triangles):
-                    if i != t1_idx and i != t2_idx:
-                        # Check if this triangle shares an edge with new_t1 or new_t2
-                        edges1 = [
-                            (new_t1[0], new_t1[1]),
-                            (new_t1[1], new_t1[2]),
-                            (new_t1[2], new_t1[0]),
-                        ]
-                        edges2 = [
-                            (new_t2[0], new_t2[1]),
-                            (new_t2[1], new_t2[2]),
-                            (new_t2[2], new_t2[0]),
-                        ]
+                # Find the neighbors of t1 and t2 that are opposite to shared vertices
+                # First for t1
+                for i in range(3):
+                    v_opp_idx = triangle_vertices[i, t1_idx]
+                    if v_opp_idx not in [shared_vertices[0], shared_vertices[1]]:
+                        n1_opp_idx = triangle_neighbors[i, t1_idx]
+                        break
 
-                        for edge in edges1 + edges2:
-                            tri_edges = [
-                                (triangle[0], triangle[1]),
-                                (triangle[1], triangle[2]),
-                                (triangle[2], triangle[0]),
-                            ]
+                # Then for t2
+                for i in range(3):
+                    v_opp_idx = triangle_vertices[i, t2_idx]
+                    if v_opp_idx not in [shared_vertices[0], shared_vertices[1]]:
+                        n2_opp_idx = triangle_neighbors[i, t2_idx]
+                        break
 
-                            for tri_edge in tri_edges:
-                                if (
-                                    np.array_equal(edge[0], tri_edge[0])
-                                    and np.array_equal(edge[1], tri_edge[1])
-                                ) or (
-                                    np.array_equal(edge[0], tri_edge[1])
-                                    and np.array_equal(edge[1], tri_edge[0])
-                                ):
-                                    if (i, t1_idx) not in stack and (
-                                        t1_idx,
-                                        i,
-                                    ) not in stack:
-                                        stack.append((i, t1_idx))
-                                    if (i, t2_idx) not in stack and (
-                                        t2_idx,
-                                        i,
-                                    ) not in stack:
-                                        stack.append((i, t2_idx))
+                # Update the neighbors for t1
+                triangle_neighbors[:, t1_idx] = [0, 0, 0]  # Reset
+                for i in range(3):
+                    edge = {
+                        triangle_vertices[i],
+                        triangle_vertices[(i + 1) % 3, t1_idx],
+                    }
+                    if p1_idx in edge and shared_vertices[0] in edge:
+                        # This edge is shared with a neighbor of original t1
+                        for j in range(3):
+                            if {
+                                triangle_vertices[j, t1_idx],
+                                triangle_vertices[(j + 1) % 3, t1_idx],
+                            } == edge:
+                                triangle_neighbors[j, t1_idx] = n1_opp_idx
+                                break
+                    elif p2_idx in edge and shared_vertices[0] in edge:
+                        # This edge is shared with a neighbor of original t2
+                        triangle_neighbors[i, t1_idx] = t2_idx
+                    elif p1_idx in edge and p2_idx in edge:
+                        # This is the new diagonal
+                        triangle_neighbors[i, t1_idx] = n2_opp_idx
+
+                # Update the neighbors for t2 similarly
+                # [implementation similar to t1 update]
+
+                # Add the affected triangles to the stack
+                if n1_opp_idx != 0:
+                    stack.append((t1_idx, n1_opp_idx))
+                if n2_opp_idx != 0:
+                    stack.append((t2_idx, n2_opp_idx))
 
         # Update the last triangle index
-        last_triangle_idx = len(triangles) - 1
+        last_triangle_idx = triangle_count - 1
 
     # Remove triangles that contain vertices of the supertriangle
     final_triangles = []
-    for triangle in triangles:
+    for i in range(triangle_vertices.shape[1]):
         has_super_vertex = False
-        for vertex in triangle:
-            if any(np.array_equal(vertex, sv) for sv in supertriangle):
+        for j in range(3):
+            if triangle_vertices[j, i] >= n_original_points:
                 has_super_vertex = True
                 break
 
         if not has_super_vertex:
+            # Convert vertex indices to actual points
+            v1, v2, v3 = triangle_vertices[:, i]
+            triangle = np.array([all_points[v1], all_points[v2], all_points[v3]])
             final_triangles.append(triangle)
 
     return final_triangles
