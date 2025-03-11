@@ -233,7 +233,7 @@ def triangulate(points: NDArray[np.floating]):
     )
 
     # Initial triangle has no neighbors (all boundaries)
-    triangle_neighbors = np.zeros(3, dtype=int)
+    triangle_neighbors = np.zeros((1, 3), dtype=int)
     last_triangle_idx = 0
 
     # Step 4-7: Loop over each point and insert into triangulation
