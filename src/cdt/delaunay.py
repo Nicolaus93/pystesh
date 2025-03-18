@@ -197,8 +197,122 @@ def find_adjacent_edge(
             raise ValueError
 
     return np.vstack(
-        [triangle_neighbors, [neigh_idx, new_triangle_idx2, containing_triangle_idx]]
+        [neigh_idx, new_triangle_idx2, containing_triangle_idx]
     )
+
+
+def lawson_swapping(
+    point_idx,
+    stack,
+    triangle_vertices,
+    triangle_neighbors,
+    all_points,
+):
+    """
+    After the insertion of P, all the triangles which are now opposite P are placed on a stack. Each triangle is then
+    removed from the stack, one at a time, and a check is made to see if P lies inside its circumcircle. If this is the
+    case, then the two triangles which share the edge opposite P violate the Delaunay condition and form a convex
+    quadrilateral with the diagonal drawn in the wrong direction. To satisfy the Delaunay constraint that each triangle
+    has an empty circumcircle, the diagonal of the quadrilateral is simply swapped, and any triangles which are now
+    opposite P are placed on the stack. This process is repeated until the stack is empty, which signals that the
+    triangulation has been restored to a Delaunay triangulation,
+    """
+    while stack:
+        t1_idx, t2_idx = stack.pop()
+
+        # Find the vertex in t1 that's not in t2
+        t1_vertices = set(triangle_vertices[t1_idx])
+        t2_vertices = set(triangle_vertices[t2_idx])
+
+        # Find the non-shared vertex in t1
+        t1_vertex_left = t1_vertices - t2_vertices
+        if len(t1_vertex_left) != 1:
+            raise RuntimeError(f"Triangles {t1_idx} and {t2_idx} should share 2 vertices")
+        p1_idx = t1_vertex_left.pop()
+
+        # Find the non-shared vertex in t2
+        t2_vertex_left = t2_vertices - t1_vertices
+        if len(t2_vertex_left) != 1:
+            raise RuntimeError(f"Triangles {t1_idx} and {t2_idx} should share 2 vertices")
+        p2_idx = t2_vertex_left.pop()
+
+        # Find the shared edge vertices
+        shared_vertices = list(t1_vertices and t2_vertices)
+        if len(shared_vertices) != 2:
+            raise RuntimeError(f"Triangles {t1_idx} and {t2_idx} should share 2 vertices")
+
+        p1 = all_points[p1_idx]
+        p2 = all_points[p2_idx]
+        s1 = all_points[shared_vertices[0]]
+        s2 = all_points[shared_vertices[1]]
+
+        # Get the actual points for in_circumcircle test
+        if p1_idx == point_idx:
+            to_check = [p2, s1, s2]
+            p = all_points[p1_idx]
+        elif p2_idx == point_idx:
+            to_check = [p1, s1, s2]
+            p = all_points[p2_idx]
+        else:
+            raise RuntimeError(f"{point_idx} not found in stack triangles {t1_idx} and {t2_idx}")
+
+        # Check if edge flip is needed (Delaunay condition)
+        if in_circumcircle(np.array(to_check), p):
+            # We need to flip the edge
+
+            # Update the vertex indices of the triangles
+            triangle_vertices[t1_idx] = [p1_idx, p2_idx, shared_vertices[0]]
+            triangle_vertices[t2_idx] = [p1_idx, p2_idx, shared_vertices[1]]
+
+            # Find the neighbors of t1 and t2 that are opposite to shared vertices
+            # First for t1
+            for i in range(3):
+                v_opp_idx = triangle_vertices[t1_idx, i]
+                if v_opp_idx not in [shared_vertices[0], shared_vertices[1]]:
+                    # TODO: not sure about this: is the idx at position "i" the correct one?
+                    n1_opp_idx = triangle_neighbors[t1_idx, i]
+                    break
+
+            # Then for t2
+            for i in range(3):
+                v_opp_idx = triangle_vertices[i, t2_idx]
+                if v_opp_idx not in [shared_vertices[0], shared_vertices[1]]:
+                    # TODO: not sure about this: is the idx at position "i" the correct one?
+                    n2_opp_idx = triangle_neighbors[t2_idx, i]
+                    break
+
+            # Update the neighbors for t1
+            triangle_neighbors[t1_idx] = [0, 0, 0]  # Reset
+            for i in range(3):
+                edge = {
+                    triangle_vertices[i],
+                    triangle_vertices[t1_idx, (i + 1) % 3],
+                }
+                if p1_idx in edge and shared_vertices[0] in edge:
+                    # This edge is shared with a neighbor of original t1
+                    for j in range(3):
+                        if {
+                            triangle_vertices[t1_idx, j],
+                            triangle_vertices[t1_idx, (j + 1) % 3],
+                        } == edge:
+                            triangle_neighbors[t1_idx, j] = n1_opp_idx
+                            break
+                elif p2_idx in edge and shared_vertices[0] in edge:
+                    # This edge is shared with a neighbor of original t2
+                    triangle_neighbors[t1_idx, i] = t2_idx
+                elif p1_idx in edge and p2_idx in edge:
+                    # This is the new diagonal
+                    triangle_neighbors[t1_idx, i] = n2_opp_idx
+
+            # Update the neighbors for t2 similarly
+            # [implementation similar to t1 update]
+
+            # Add the affected triangles to the stack
+            if n1_opp_idx != 0:
+                stack.append((t1_idx, n1_opp_idx))
+            if n2_opp_idx != 0:
+                stack.append((t2_idx, n2_opp_idx))
+
 
 
 def triangulate(points: NDArray[np.floating]):
@@ -277,22 +391,24 @@ def triangulate(points: NDArray[np.floating]):
         ]
 
         # Second new triangle
-        triangle_neighbors = find_adjacent_edge(
+        new_neighbors = find_adjacent_edge(
             triangle_neighbors=triangle_neighbors,
             neigh_idx=neigh_idx2,
             containing_triangle_idx=containing_idx,
             new_triangle_idx1=new_triangle_idx1,
             new_triangle_idx2=new_triangle_idx2,
         )
+        triangle_neighbors = np.vstack((triangle_neighbors, new_neighbors))
 
         # Third new triangle
-        triangle_neighbors = find_adjacent_edge(
+        new_neighbors = find_adjacent_edge(
             triangle_neighbors=triangle_neighbors,
             neigh_idx=neigh_idx3,
             containing_triangle_idx=containing_idx,
             new_triangle_idx1=new_triangle_idx2,  # NB: swapped compared to second triangle
             new_triangle_idx2=new_triangle_idx1,  # NB: swapped compared to second triangle
         )
+        triangle_neighbors = np.vstack((triangle_neighbors, new_neighbors))
 
         # Step 6: Initialize stack for edge flipping
         # Add potentially affected edges to the stack
@@ -306,98 +422,7 @@ def triangulate(points: NDArray[np.floating]):
             stack.append((new_triangle_idx2, neigh_idx3))
 
         # Step 7: Restore Delaunay triangulation (edge flipping)
-        while stack:
-            t1_idx, t2_idx = stack.pop()
-
-            # Find the vertex in t1 that's not in t2
-            v1_idx, v2_idx, v3_idx = triangle_vertices[:, t1_idx]
-            t2_vertices = set(triangle_vertices[:, t2_idx])
-
-            # Find the non-shared vertex in t1
-            if v1_idx not in t2_vertices:
-                p1_idx = v1_idx
-            elif v2_idx not in t2_vertices:
-                p1_idx = v2_idx
-            else:
-                p1_idx = v3_idx
-
-            # Find the non-shared vertex in t2
-            v1_idx, v2_idx, v3_idx = triangle_vertices[:, t2_idx]
-            t1_vertices = set(triangle_vertices[:, t1_idx])
-
-            if v1_idx not in t1_vertices:
-                p2_idx = v1_idx
-            elif v2_idx not in t1_vertices:
-                p2_idx = v2_idx
-            else:
-                p2_idx = v3_idx
-
-            # Find the shared edge vertices
-            shared_vertices = []
-            for v_idx in triangle_vertices[:, t1_idx]:
-                if v_idx in t2_vertices:
-                    shared_vertices.append(v_idx)
-
-            # Get the actual points for in_circumcircle test
-            p1 = all_points[p1_idx]
-            p2 = all_points[p2_idx]
-            s1 = all_points[shared_vertices[0]]
-            s2 = all_points[shared_vertices[1]]
-
-            # Check if edge flip is needed (Delaunay condition)
-            if in_circumcircle(np.array([p2, s1, s2]), p1):
-                # We need to flip the edge
-
-                # Update the vertex indices of the triangles
-                triangle_vertices[:, t1_idx] = [p1_idx, p2_idx, shared_vertices[0]]
-                triangle_vertices[:, t2_idx] = [p1_idx, p2_idx, shared_vertices[1]]
-
-                # Find the neighbors of t1 and t2 that are opposite to shared vertices
-                # First for t1
-                for i in range(3):
-                    v_opp_idx = triangle_vertices[i, t1_idx]
-                    if v_opp_idx not in [shared_vertices[0], shared_vertices[1]]:
-                        n1_opp_idx = triangle_neighbors[i, t1_idx]
-                        break
-
-                # Then for t2
-                for i in range(3):
-                    v_opp_idx = triangle_vertices[i, t2_idx]
-                    if v_opp_idx not in [shared_vertices[0], shared_vertices[1]]:
-                        n2_opp_idx = triangle_neighbors[i, t2_idx]
-                        break
-
-                # Update the neighbors for t1
-                triangle_neighbors[:, t1_idx] = [0, 0, 0]  # Reset
-                for i in range(3):
-                    edge = {
-                        triangle_vertices[i],
-                        triangle_vertices[(i + 1) % 3, t1_idx],
-                    }
-                    if p1_idx in edge and shared_vertices[0] in edge:
-                        # This edge is shared with a neighbor of original t1
-                        for j in range(3):
-                            if {
-                                triangle_vertices[j, t1_idx],
-                                triangle_vertices[(j + 1) % 3, t1_idx],
-                            } == edge:
-                                triangle_neighbors[j, t1_idx] = n1_opp_idx
-                                break
-                    elif p2_idx in edge and shared_vertices[0] in edge:
-                        # This edge is shared with a neighbor of original t2
-                        triangle_neighbors[i, t1_idx] = t2_idx
-                    elif p1_idx in edge and p2_idx in edge:
-                        # This is the new diagonal
-                        triangle_neighbors[i, t1_idx] = n2_opp_idx
-
-                # Update the neighbors for t2 similarly
-                # [implementation similar to t1 update]
-
-                # Add the affected triangles to the stack
-                if n1_opp_idx != 0:
-                    stack.append((t1_idx, n1_opp_idx))
-                if n2_opp_idx != 0:
-                    stack.append((t2_idx, n2_opp_idx))
+        lawson_swapping(point_idx, stack, triangle_vertices, triangle_neighbors, all_points)
 
         # Update the last triangle index
         last_triangle_idx = triangle_count - 1
