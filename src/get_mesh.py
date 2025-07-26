@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import numpy as np
 import polyscope as ps
+import PythonCDT as cdt
 from loguru import logger
 from numpy.typing import NDArray
 from OCP.BRep import BRep_Tool
@@ -16,7 +17,6 @@ from OCP.Geom import (
 from OCP.OCP.IFSelect import IFSelect_ReturnStatus
 from OCP.OCP.STEPControl import STEPControl_Reader
 
-import PythonCDT as cdt
 from src.faces import cylinder
 from src.faces.cone import (
     get_2d_points_cone,

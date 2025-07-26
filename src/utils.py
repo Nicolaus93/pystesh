@@ -1,13 +1,13 @@
 from collections import defaultdict
 
 import numpy as np
+import PythonCDT as cdt
 from loguru import logger
 from matplotlib import pyplot as plt
 from OCP.BRep import BRep_Tool
 from OCP.Geom import Geom_BSplineSurface, Geom_ConicalSurface, Geom_Plane
 from OCP.STEPControl import STEPControl_AsIs, STEPControl_Reader, STEPControl_Writer
 
-import PythonCDT as cdt
 from src.faces.cone import (
     get_2d_points_cone,
     get_3d_points_from_2d,

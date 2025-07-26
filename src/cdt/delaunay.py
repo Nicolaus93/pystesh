@@ -35,7 +35,9 @@ class Triangulation:
 
         # Draw triangles and label triangle indices and vertices
         if exclude_super_t:
-            triangle_vertices = self.triangle_vertices[3:]  # exclude super-triangle vertices  TODO: hard-coded 3 is not safe
+            triangle_vertices = self.triangle_vertices[
+                3:
+            ]  # exclude super-triangle vertices  TODO: hard-coded 3 is not safe
             all_points = self.all_points[:-3]
         else:
             triangle_vertices = self.triangle_vertices
@@ -44,7 +46,7 @@ class Triangulation:
         for tri_idx, tri in enumerate(triangle_vertices):
             pts = all_points[tri]
             tri_closed = np.vstack([pts, pts[0]])  # Close the triangle
-            ax.plot(tri_closed[:, 0], tri_closed[:, 1], 'k-', linewidth=1)
+            ax.plot(tri_closed[:, 0], tri_closed[:, 1], "k-", linewidth=1)
 
             # Triangle index at centroid
             centroid = np.mean(pts, axis=0)
@@ -53,9 +55,9 @@ class Triangulation:
                 centroid[1],
                 str(tri_idx),
                 fontsize=8,
-                ha='center',
-                va='center',
-                color='green'
+                ha="center",
+                va="center",
+                color="green",
             )
 
             # Vertex indices at triangle corners with slight offset
@@ -65,28 +67,22 @@ class Triangulation:
                     y + offset,
                     str(vert_idx),
                     fontsize=7,
-                    ha='left',
-                    va='bottom',
-                    color='purple'
+                    ha="left",
+                    va="bottom",
+                    color="purple",
                 )
 
         # Draw points
-        ax.plot(all_points[:, 0], all_points[:, 1], 'ro', markersize=3)
+        ax.plot(all_points[:, 0], all_points[:, 1], "ro", markersize=3)
 
         # Optional: Label all points with their indices in blue
         if point_labels:
             for idx, (x, y) in enumerate(all_points):
                 ax.text(
-                    x,
-                    y,
-                    str(idx),
-                    fontsize=8,
-                    ha='right',
-                    va='bottom',
-                    color='blue'
+                    x, y, str(idx), fontsize=8, ha="right", va="bottom", color="blue"
                 )
 
-        ax.set_aspect('equal')
+        ax.set_aspect("equal")
         ax.set_title(title)
 
         if show:
@@ -131,11 +127,16 @@ def point_inside_triangle(
 
         triangle_with_closure = np.vstack([triangle, triangle[0]])  # Close the triangle
         plt.figure()
-        plt.plot(triangle_with_closure[:, 0], triangle_with_closure[:, 1], 'b-', label='Triangle')
-        plt.scatter(*point, color='red', label='Point')
-        plt.axis('equal')
+        plt.plot(
+            triangle_with_closure[:, 0],
+            triangle_with_closure[:, 1],
+            "b-",
+            label="Triangle",
+        )
+        plt.scatter(*point, color="red", label="Point")
+        plt.axis("equal")
         plt.legend()
-        plt.title('Point Inside Triangle' if inside else 'Point Outside Triangle')
+        plt.title("Point Inside Triangle" if inside else "Point Outside Triangle")
         plt.show()
 
     return inside
@@ -163,7 +164,6 @@ def find_containing_triangle(
     """
     if triangulation.triangle_vertices.shape[0] == 0 or last_triangle_idx < 0:
         raise ValueError("No triangles available or invalid starting triangle")
-
 
     for triangle_idx, val in enumerate(triangulation.triangle_vertices):
         v_indices = triangulation.triangle_vertices[triangle_idx]
@@ -216,8 +216,7 @@ def find_containing_triangle(
 
 
 def get_sorted_points(
-    points: NDArray[np.floating],
-    debug: bool = False
+    points: NDArray[np.floating], debug: bool = False
 ) -> tuple[NDArray[np.floating], NDArray[np.integer]]:
     """
     Sort points into a spatially coherent order to improve incremental insertion efficiency.
@@ -226,19 +225,13 @@ def get_sorted_points(
     :param debug: if True, show a plot of the grid and points
     :return: sorted points and their original indices
     """
-    # Find the min and max along each axis (x and y)
-    min_vals = np.min(points, axis=0)
-    max_vals = np.max(points, axis=0)
 
-    # Normalize the points to [0, 1] range
-    normalized_points = (points - min_vals) / (max_vals - min_vals)
-
-    # Step 2: sort the points into bins
+    # sort the points into bins
     grid_size = int(np.sqrt(len(points)))
     grid_size = max(grid_size, 4)  # Minimum grid size of 4x4
 
-    y_idxs = (0.99 * grid_size * normalized_points[:, 1]).astype(int)
-    x_idxs = (0.99 * grid_size * normalized_points[:, 0]).astype(int)
+    y_idxs = (0.99 * grid_size * points[:, 1]).astype(int)
+    x_idxs = (0.99 * grid_size * points[:, 0]).astype(int)
 
     # Create bin numbers in a snake-like pattern
     bin_numbers = np.zeros(len(points), dtype=int)
@@ -251,7 +244,7 @@ def get_sorted_points(
 
     # Sort the points by their bin numbers
     sorted_indices = np.argsort(bin_numbers)
-    sorted_points = normalized_points[sorted_indices]
+    sorted_points = points[sorted_indices]
 
     if debug:
         import matplotlib.pyplot as plt
@@ -260,23 +253,34 @@ def get_sorted_points(
 
         # Plot the grid
         for i in range(grid_size + 1):
-            ax.axhline(i / grid_size, color='gray', linestyle='--', linewidth=0.5)
-            ax.axvline(i / grid_size, color='gray', linestyle='--', linewidth=0.5)
+            ax.axhline(i / grid_size, color="gray", linestyle="--", linewidth=0.5)
+            ax.axvline(i / grid_size, color="gray", linestyle="--", linewidth=0.5)
 
         # Plot the points
-        ax.scatter(normalized_points[:, 0], normalized_points[:, 1], c='blue', label='Original points')
-        ax.scatter(sorted_points[:, 0], sorted_points[:, 1], c='red', s=10, label='Sorted points', alpha=0.6)
+        ax.scatter(
+            normalized_points[:, 0],
+            normalized_points[:, 1],
+            c="blue",
+            label="Original points",
+        )
+        ax.scatter(
+            sorted_points[:, 0],
+            sorted_points[:, 1],
+            c="red",
+            s=10,
+            label="Sorted points",
+            alpha=0.6,
+        )
 
         ax.set_title("Debug: Normalized Points and Grid")
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
-        ax.set_aspect('equal')
+        ax.set_aspect("equal")
         ax.legend()
         plt.grid(False)
         plt.show()
 
     return sorted_points, sorted_indices
-
 
 
 def initialize_triangulation(
@@ -291,11 +295,13 @@ def initialize_triangulation(
     :param debug: if True, show a plot with the super triangle
     :return: All points array, triangle vertices, triangle neighbors, and last triangle index
     """
-    super_vertices = np.array([
-        [-margin, -margin],
-        [margin, -margin],
-        [0.5, margin],
-    ])
+    super_vertices = np.array(
+        [
+            [-margin, -margin],
+            [margin, -margin],
+            [0.5, margin],
+        ]
+    )
 
     # Add super-triangle vertices to the points array
     all_points = np.vstack([sorted_points, super_vertices])
@@ -341,7 +347,9 @@ def ensure_ccw_triangle(vertices: NDArray, points: NDArray) -> NDArray:
     return vertices
 
 
-def find_neighbor_edge_index(triangle_neighbors: NDArray, triangle_idx: int, neighbor_idx: int) -> int:
+def find_neighbor_edge_index(
+    triangle_neighbors: NDArray, triangle_idx: int, neighbor_idx: int
+) -> int:
     """
     Find which edge index (0, 1, or 2) connects to the given neighbor.
     Returns the index i such that triangle_neighbors[triangle_idx, i] == neighbor_idx
@@ -350,10 +358,14 @@ def find_neighbor_edge_index(triangle_neighbors: NDArray, triangle_idx: int, nei
     for i, neighbor in enumerate(neighbors):
         if neighbor == neighbor_idx:
             return i
-    raise RuntimeError(f"Triangle {triangle_idx} is not a neighbor of triangle {neighbor_idx}")
+    raise RuntimeError(
+        f"Triangle {triangle_idx} is not a neighbor of triangle {neighbor_idx}"
+    )
 
 
-def find_shared_edge(tri1_vertices: NDArray, tri2_vertices: NDArray) -> tuple[int, int, int, int]:
+def find_shared_edge(
+    tri1_vertices: NDArray, tri2_vertices: NDArray
+) -> tuple[int, int, int, int]:
     """
     Find the shared edge between two triangles.
     Returns (v1, v2, opposite1, opposite2) where:
@@ -363,7 +375,9 @@ def find_shared_edge(tri1_vertices: NDArray, tri2_vertices: NDArray) -> tuple[in
     """
     shared = list(set(tri1_vertices) & set(tri2_vertices))
     if len(shared) != 2:
-        raise RuntimeError(f"Triangles must share exactly one edge. Shared vertices: {shared}")
+        raise RuntimeError(
+            f"Triangles must share exactly one edge. Shared vertices: {shared}"
+        )
 
     v1, v2 = shared
     opposite1 = next(v for v in tri1_vertices if v not in shared)
@@ -388,17 +402,15 @@ def incircle_test_debug(t3_points, p):
             return None, None  # Degenerate triangle
 
         Ux = (
-                (np.dot(A, A) * (B[1] - C[1]) +
-                 np.dot(B, B) * (C[1] - A[1]) +
-                 np.dot(C, C) * (A[1] - B[1]))
-                / D
-        )
+            np.dot(A, A) * (B[1] - C[1])
+            + np.dot(B, B) * (C[1] - A[1])
+            + np.dot(C, C) * (A[1] - B[1])
+        ) / D
         Uy = (
-                (np.dot(A, A) * (C[0] - B[0]) +
-                 np.dot(B, B) * (A[0] - C[0]) +
-                 np.dot(C, C) * (B[0] - A[0]))
-                / D
-        )
+            np.dot(A, A) * (C[0] - B[0])
+            + np.dot(B, B) * (A[0] - C[0])
+            + np.dot(C, C) * (B[0] - A[0])
+        ) / D
         return np.array([Ux, Uy]), np.linalg.norm(A - np.array([Ux, Uy]))
 
     p1, p2, p3 = t3_points
@@ -406,18 +418,25 @@ def incircle_test_debug(t3_points, p):
 
     fig, ax = plt.subplots()
     tri_pts = np.vstack([t3_points, t3_points[0]])
-    ax.plot(tri_pts[:, 0], tri_pts[:, 1], 'k-', label='Triangle')
-    ax.plot(*p, 'ro', label='Query point')
+    ax.plot(tri_pts[:, 0], tri_pts[:, 1], "k-", label="Triangle")
+    ax.plot(*p, "ro", label="Query point")
 
     if center is not None:
-        circ = Circle(center, radius, fill=False, color='blue', linestyle='--', label='Circumcircle')
+        circ = Circle(
+            center,
+            radius,
+            fill=False,
+            color="blue",
+            linestyle="--",
+            label="Circumcircle",
+        )
         ax.add_patch(circ)
-        ax.plot(*center, 'bx', label='Circumcenter')
+        ax.plot(*center, "bx", label="Circumcenter")
 
     for i, (x, y) in enumerate(t3_points):
-        ax.text(x, y, f'v{i}', fontsize=8, color='purple', ha='center', va='center')
+        ax.text(x, y, f"v{i}", fontsize=8, color="purple", ha="center", va="center")
 
-    ax.set_aspect('equal')
+    ax.set_aspect("equal")
     ax.set_title("Incircle Test Debug")
     ax.legend()
     plt.show()
@@ -445,7 +464,7 @@ def lawson_swapping(
 
     p = points[point_idx]
 
-    logger.info(f"Lawson swapping phase")
+    logger.info("Lawson swapping phase")
     while stack:
         logger.debug(f"Stack -> {stack}")
         t3_idx, t4_idx = stack.pop()
@@ -464,7 +483,9 @@ def lawson_swapping(
                 incircle_test_debug(t3_points, p)
             continue
 
-        logger.warning(f"Point {point_idx} from triangle {t4_idx} lies in circumcircle of triangle {t3_idx}; flipping shared edge")
+        logger.warning(
+            f"Point {point_idx} from triangle {t4_idx} lies in circumcircle of triangle {t3_idx}; flipping shared edge"
+        )
 
         # Find shared edge and opposite vertices
         a, b, temp, c = find_shared_edge(t4, t3)
@@ -537,7 +558,9 @@ def lawson_swapping(
         neighbors[t4_idx] = t4_neighbors
 
         # Update references in neighboring triangles
-        def update_neighbor_reference(neighbor_idx: int, old_triangle: int, new_triangle: int):
+        def update_neighbor_reference(
+            neighbor_idx: int, old_triangle: int, new_triangle: int
+        ):
             if neighbor_idx != -1:
                 mask = neighbors[neighbor_idx] == old_triangle
                 if np.any(mask):
@@ -556,9 +579,7 @@ def lawson_swapping(
 
 
 def reorder_neighbors_for_triangle(
-    original_vertices: np.ndarray,
-    final_vertices: np.ndarray,
-    original_neighbors: list
+    original_vertices: np.ndarray, final_vertices: np.ndarray, original_neighbors: list
 ) -> list:
     """Reorder neighbor indices to match reordered vertices"""
     if np.array_equal(original_vertices, final_vertices):
@@ -593,33 +614,45 @@ def insert_point(
     :return: Updated triangle_vertices, triangle_neighbors, last_triangle_idx
     """
     # Find the triangle containing the point
-    containing_idx = find_containing_triangle(triangulation, point, triangulation.last_triangle_idx)
+    containing_idx = find_containing_triangle(
+        triangulation, point, triangulation.last_triangle_idx
+    )
 
     # Get vertices of the containing triangle
     v1_idx, v2_idx, v3_idx = triangulation.triangle_vertices[containing_idx]
-    logger.debug(f"Triangle {containing_idx} with vertices {v1_idx}, {v2_idx}, {v3_idx} contains point {point_idx}")
+    logger.debug(
+        f"Triangle {containing_idx} with vertices {v1_idx}, {v2_idx}, {v3_idx} contains point {point_idx}"
+    )
 
     # Get the original neighbors before we modify anything
     orig_neighbors = triangulation.triangle_neighbors[containing_idx].copy()
     neighbor_opp_v1 = orig_neighbors[0]  # neighbor opposite to v1 (across edge v2-v3)
     neighbor_opp_v2 = orig_neighbors[1]  # neighbor opposite to v2 (across edge v3-v1)
     neighbor_opp_v3 = orig_neighbors[2]  # neighbor opposite to v3 (across edge v1-v2)
-    logger.debug(f"Neighbours: opposite v3={neighbor_opp_v3}, opposite v1={neighbor_opp_v1}, opposite v2={neighbor_opp_v2}")
+    logger.debug(
+        f"Neighbours: opposite v3={neighbor_opp_v3}, opposite v1={neighbor_opp_v1}, opposite v2={neighbor_opp_v2}"
+    )
 
     # Create three new triangles by connecting point to each vertex
     # Note that we need to maintain CCW ordering for each triangle
 
     # Triangle 1: point + edge (v1, v2)
     original_t12_vertices = np.array([point_idx, v1_idx, v2_idx])
-    new_triangle_12 = ensure_ccw_triangle(original_t12_vertices, triangulation.all_points)
+    new_triangle_12 = ensure_ccw_triangle(
+        original_t12_vertices, triangulation.all_points
+    )
 
     # Triangle 2: point + edge (v2, v3)
     original_t23_vertices = np.array([point_idx, v2_idx, v3_idx])
-    new_triangle_23 = ensure_ccw_triangle(original_t23_vertices, triangulation.all_points)
+    new_triangle_23 = ensure_ccw_triangle(
+        original_t23_vertices, triangulation.all_points
+    )
 
     # Triangle 3: point + edge (v3, v1)
     original_t31_vertices = np.array([point_idx, v3_idx, v1_idx])
-    new_triangle_31 = ensure_ccw_triangle(original_t31_vertices, triangulation.all_points)
+    new_triangle_31 = ensure_ccw_triangle(
+        original_t31_vertices, triangulation.all_points
+    )
 
     # Update triangulation data structure
     # first, update containing_idx
@@ -645,7 +678,7 @@ def insert_point(
     triangulation.triangle_neighbors = np.vstack(
         (
             triangulation.triangle_neighbors,
-            np.full((2, 3), -1, dtype=int)  # Initialize with -1 for no neighbor
+            np.full((2, 3), -1, dtype=int),  # Initialize with -1 for no neighbor
         )
     )
 
@@ -655,32 +688,44 @@ def insert_point(
 
     # Triangle 1 (point, v1, v2)
     original_neighs_t12 = [
-        neighbor_opp_v3,      # Edge (v1, v2) -> original neighbor opposite to v3
+        neighbor_opp_v3,  # Edge (v1, v2) -> original neighbor opposite to v3
         new_triangle_23_idx,  # Edge (v2, point) -> triangle_23
         new_triangle_31_idx,  # Edge (point, v1) -> triangle_31
     ]
-    triangulation.triangle_neighbors[new_triangle_12_idx] = reorder_neighbors_for_triangle(
-        original_t12_vertices, new_triangle_12, original_neighs_t12,
+    triangulation.triangle_neighbors[new_triangle_12_idx] = (
+        reorder_neighbors_for_triangle(
+            original_t12_vertices,
+            new_triangle_12,
+            original_neighs_t12,
+        )
     )
 
     # Triangle 2 (point, v2, v3)
     original_neighs_t23 = [
-        neighbor_opp_v1,      # Edge (v2, v3) -> original neighbor opposite to v1
+        neighbor_opp_v1,  # Edge (v2, v3) -> original neighbor opposite to v1
         new_triangle_31_idx,  # Edge (v3, point) -> triangle_31
         new_triangle_12_idx,  # Edge (point, v2) -> triangle_12
     ]
-    triangulation.triangle_neighbors[new_triangle_23_idx] = reorder_neighbors_for_triangle(
-        original_t23_vertices, new_triangle_23, original_neighs_t23,
+    triangulation.triangle_neighbors[new_triangle_23_idx] = (
+        reorder_neighbors_for_triangle(
+            original_t23_vertices,
+            new_triangle_23,
+            original_neighs_t23,
+        )
     )
 
     # Triangle 3 (point, v3, v1)
     original_neighs_t31 = [
-        neighbor_opp_v2,      # Edge (v3, v1) -> original neighbor opposite to v2
+        neighbor_opp_v2,  # Edge (v3, v1) -> original neighbor opposite to v2
         new_triangle_12_idx,  # Edge (v1, point) -> triangle_12
         new_triangle_23_idx,  # Edge (point, v3) -> triangle_23
     ]
-    triangulation.triangle_neighbors[new_triangle_31_idx] = reorder_neighbors_for_triangle(
-        original_t31_vertices, new_triangle_31, original_neighs_t31,
+    triangulation.triangle_neighbors[new_triangle_31_idx] = (
+        reorder_neighbors_for_triangle(
+            original_t31_vertices,
+            new_triangle_31,
+            original_neighs_t31,
+        )
     )
 
     # Update the original neighbors to point to the correct new triangles
@@ -740,7 +785,14 @@ def triangulate(points: NDArray[np.floating]):
     :return: List of triangles forming the Delaunay triangulation
     """
     # Sort points for efficient insertion
-    sorted_points, sorted_indices = get_sorted_points(points)
+    # Find the min and max along each axis (x and y)
+    min_vals = np.min(points, axis=0)
+    max_vals = np.max(points, axis=0)
+
+    # Normalize the points to [0, 1] range
+    normalized_points = (points - min_vals) / (max_vals - min_vals)
+    # sorted_points, sorted_indices = get_sorted_points(normalized_points)  # TODO: reactivate?
+    sorted_points = normalized_points
 
     # Initialize triangulation with super triangle
     triangulation = initialize_triangulation(sorted_points, margin=2.0)
@@ -804,7 +856,7 @@ def is_point_inside(x: float, y: float, poly: list[tuple[float, float]]) -> bool
 def is_inside_domain(
     point: tuple[float, float],
     poly_outer: list[tuple[float, float]],
-    holes: list[list[tuple[float, float]]]
+    holes: list[list[tuple[float, float]]],
 ) -> bool:
     x, y = point
     if not is_point_inside(x, y, poly_outer):
@@ -815,7 +867,9 @@ def is_inside_domain(
     return True
 
 
-def remove_holes(triangulation: Triangulation, outer: list[int], holes: list[list[int]]) -> None:
+def remove_holes(
+    triangulation: Triangulation, outer: list[int], holes: list[list[int]]
+) -> None:
     """
     Get the final triangulation, compute the centroids for all the triangles. If a centroid is outside the domain,
     remove the corresponding triangle.
@@ -837,7 +891,10 @@ def remove_holes(triangulation: Triangulation, outer: list[int], holes: list[lis
         if not is_inside_domain(centroid, poly_outer, poly_holes):
             to_delete.append(idx)
 
-    new_tri_vertices = [row for idx, row in enumerate(tri_vertices) if idx not in to_delete]
+    logger.info(f"Removing triangles {to_delete}")
+    new_tri_vertices = [
+        row for idx, row in enumerate(tri_vertices) if idx not in to_delete
+    ]
     # TODO: update triangle neighbors?
     triangulation.triangle_vertices = new_tri_vertices
 
