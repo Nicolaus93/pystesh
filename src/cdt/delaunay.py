@@ -13,7 +13,13 @@ class Triangulation:
     triangle_neighbors: NDArray[np.integer]
     last_triangle_idx: int = 0
 
-    def plot(self, show: bool = True, title: str = "Triangulation", point_labels: bool = False) -> None:
+    def plot(
+        self,
+        show: bool = True,
+        title: str = "Triangulation",
+        point_labels: bool = False,
+        exclude_super_t: bool = False,
+    ) -> None:
         """
         Plot the triangulation using matplotlib.
 
@@ -28,8 +34,15 @@ class Triangulation:
         offset = 0.01  # Adjust as needed depending on your scale
 
         # Draw triangles and label triangle indices and vertices
-        for tri_idx, tri in enumerate(self.triangle_vertices):
-            pts = self.all_points[tri]
+        if exclude_super_t:
+            triangle_vertices = self.triangle_vertices[3:]  # exclude super-triangle vertices  TODO: hard-coded 3 is not safe
+            all_points = self.all_points[:-3]
+        else:
+            triangle_vertices = self.triangle_vertices
+            all_points = self.all_points
+
+        for tri_idx, tri in enumerate(triangle_vertices):
+            pts = all_points[tri]
             tri_closed = np.vstack([pts, pts[0]])  # Close the triangle
             ax.plot(tri_closed[:, 0], tri_closed[:, 1], 'k-', linewidth=1)
 
@@ -58,11 +71,11 @@ class Triangulation:
                 )
 
         # Draw points
-        ax.plot(self.all_points[:, 0], self.all_points[:, 1], 'ro', markersize=3)
+        ax.plot(all_points[:, 0], all_points[:, 1], 'ro', markersize=3)
 
         # Optional: Label all points with their indices in blue
         if point_labels:
-            for idx, (x, y) in enumerate(self.all_points):
+            for idx, (x, y) in enumerate(all_points):
                 ax.text(
                     x,
                     y,
@@ -727,7 +740,6 @@ def triangulate(points: NDArray[np.floating]):
     :return: List of triangles forming the Delaunay triangulation
     """
     # Sort points for efficient insertion
-    n_original_points = len(points)
     sorted_points, sorted_indices = get_sorted_points(points)
 
     # Initialize triangulation with super triangle
@@ -749,6 +761,85 @@ def triangulate(points: NDArray[np.floating]):
     remove_super_triangle_triangles(triangulation, n_original_points)
 
     return triangulation
+
+
+def is_point_inside(x: float, y: float, poly: list[tuple[float, float]]) -> bool:
+    """
+    From https://en.wikipedia.org/wiki/Even%E2%80%93odd_rule
+    Determine if the point is on the path, corner, or boundary of the polygon
+
+    Args:
+      x -- The x coordinates of point.
+      y -- The y coordinates of point.
+      poly -- a list of tuples [(x, y), (x, y), ...]
+
+    Returns:
+      True if the point is in the path or is a corner or on the boundary
+    """
+    inside = False
+    for i in range(len(poly)):
+        x0, y0 = poly[i]
+        x1, y1 = poly[i - 1]
+        if (x == x0) and (y == y0):
+            # point is a corner
+            return True
+        # Check where the ray intersects the edge horizontally
+        if (y0 > y) != (y1 > y):
+            # determines the relative position of the point (x, y) to the edge (x0,y0)→(x1,y1) using cross product
+            # between:
+            # - Vector A: from vertex (x0,y0) to point (x,y)
+            # - Vector B: from vertex (x0,y0) to vertex (x1,y1)
+            # slope > 0 -> Point is to the left of the edge
+            # slope < 0 -> Point is to the right of the edge
+            # slope == 0 -> Point lies exactly on the edge (colinear)
+            cross = (x - x0) * (y1 - y0) - (x1 - x0) * (y - y0)
+            if cross == 0:
+                # TODO: point is on boundary, what to return?
+                return True
+            if (cross < 0) != (y1 < y0):
+                inside = not inside
+    return inside
+
+
+def is_inside_domain(
+    point: tuple[float, float],
+    poly_outer: list[tuple[float, float]],
+    holes: list[list[tuple[float, float]]]
+) -> bool:
+    x, y = point
+    if not is_point_inside(x, y, poly_outer):
+        return False
+    for hole in holes:
+        if is_point_inside(x, y, hole):
+            return False
+    return True
+
+
+def remove_holes(triangulation: Triangulation, outer: list[int], holes: list[list[int]]) -> None:
+    """
+    Get the final triangulation, compute the centroids for all the triangles. If a centroid is outside the domain,
+    remove the corresponding triangle.
+    TODO: caveats we can have 1) Centroid Inside, Triangle Outside, 2) Centroid Outside, Triangle Inside
+    for a more robust version, use this strategy for all vertices (if a point is on the boundary, then it's inside)
+    TODO: points in outer and holes should be sorted as those in triangulation do!
+    """
+    tri_vertices = triangulation.triangle_vertices
+    to_delete = []
+    poly_outer = [triangulation.all_points[p] for p in outer]
+    poly_holes = []
+    for hole in holes:
+        poly_hole = [triangulation.all_points[p] for p in hole]
+        poly_holes.append(poly_hole)
+
+    for idx, row in enumerate(tri_vertices):
+        tri_points = triangulation.all_points[row]
+        centroid = np.mean(tri_points, axis=0)
+        if not is_inside_domain(centroid, poly_outer, poly_holes):
+            to_delete.append(idx)
+
+    new_tri_vertices = [row for idx, row in enumerate(tri_vertices) if idx not in to_delete]
+    # TODO: update triangle neighbors?
+    triangulation.triangle_vertices = new_tri_vertices
 
 
 if __name__ == "__main__":
@@ -792,22 +883,6 @@ if __name__ == "__main__":
             [24.538, -6.561],
         ]
     )
-    # print(arr.shape)
-    # sorted_points, sorted_indices = get_sorted_points(arr, debug=True)
-    # all_points, triangle_vertices, triangle_neighbors, last_triangle_idx = initialize_triangulation(
-    #     sorted_points,
-    #     margin=5.0,
-    #     debug=True
-    # )
-    # insert_point(
-    #     point_idx=0,
-    #     point=sorted_points[0],
-    #     all_points=all_points,
-    #     triangle_vertices=triangle_vertices,
-    #     triangle_neighbors=triangle_neighbors,
-    #     last_triangle_idx=last_triangle_idx,
-    #     debug=True,
-    # )
 
     yy = triangulate(arr)
-    yy.plot()
+    yy.plot(exclude_super_t=True)
