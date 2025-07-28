@@ -39,14 +39,15 @@ def generate_concentric_circles(center=(0, 0), num_points=20, debug=False):
     return points
 
 
-def test_concentric_circles():
+def triangle_concentric_circles():
     n = 20
     inner_circle, outer_circle = generate_concentric_circles(num_points=n, debug=True)
-    yy = triangulate(np.vstack([outer_circle, inner_circle]))
-    yy.plot(exclude_super_t=True)
+    yy = triangulate(np.vstack([outer_circle, inner_circle]), debug=True)
+    yy.export_animation_matplotlib("triangulation.gif")
+    yy.plot()
     remove_holes(yy, [i for i in range(n)], [[i for i in range(n, 2 * n)]])
     yy.plot(exclude_super_t=True)
 
 
 if __name__ == "__main__":
-    test_concentric_circles()
+    triangle_concentric_circles()

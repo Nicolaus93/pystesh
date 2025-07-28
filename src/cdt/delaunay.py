@@ -1,9 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from loguru import logger
 from numpy.typing import NDArray
 from shewchuk import incircle_test
+from pathlib import Path
 
 
 @dataclass
@@ -12,10 +13,11 @@ class Triangulation:
     triangle_vertices: NDArray[np.integer]
     triangle_neighbors: NDArray[np.integer]
     last_triangle_idx: int = 0
+    debug_plots: list[NDArray[np.floating]] = field(default_factory=list)
 
     def plot(
         self,
-        show: bool = True,
+        show: bool = False,
         title: str = "Triangulation",
         point_labels: bool = False,
         exclude_super_t: bool = False,
@@ -87,6 +89,53 @@ class Triangulation:
 
         if show:
             plt.show()
+
+        # Convert figure to RGB image in memory
+        fig.canvas.draw()
+        buf = fig.canvas.buffer_rgba()
+        img = np.asarray(buf)[:, :, :3]  # Convert to RGB by discarding alpha
+        plt.close(fig)
+        self.debug_plots.append(img)
+
+    def export_animation_matplotlib(self, filepath: str | Path, fps: int = 2) -> None:
+        """
+        Export animation using matplotlib.
+
+        :param filepath: Output .mp4 or .gif file
+        :param fps: Frames per second
+        """
+        import matplotlib.pyplot as plt
+        import matplotlib.animation as animation
+
+        if not self.debug_plots:
+            raise ValueError("No debug plots to export.")
+
+        fig, ax = plt.subplots()
+        img_artist = ax.imshow(self.debug_plots[0])
+        ax.axis("off")  # Optional: Hide axes
+
+        def update(frame):
+            img_artist.set_data(self.debug_plots[frame])
+            return [img_artist]
+
+        anim = animation.FuncAnimation(
+            fig,
+            update,
+            frames=len(self.debug_plots),
+            interval=1000 / fps,
+            blit=True,
+        )
+
+        # Save based on file extension
+        filepath = Path(filepath)
+        if filepath.suffix == ".mp4":
+            anim.save(filepath, fps=fps, writer="ffmpeg")
+        elif filepath.suffix == ".gif":
+            anim.save(filepath, fps=fps, writer="pillow")
+        else:
+            raise ValueError("Unsupported file format. Use .gif or .mp4")
+
+        plt.close(fig)
 
 
 def point_inside_triangle(
@@ -165,54 +214,54 @@ def find_containing_triangle(
     if triangulation.triangle_vertices.shape[0] == 0 or last_triangle_idx < 0:
         raise ValueError("No triangles available or invalid starting triangle")
 
-    for triangle_idx, val in enumerate(triangulation.triangle_vertices):
-        v_indices = triangulation.triangle_vertices[triangle_idx]
-        triangle = triangulation.all_points[v_indices]
-        if point_inside_triangle(triangle, point):
-            return triangle_idx
-
-    raise RuntimeError("No triangles found")
-
-    # # Start from the last added triangle
-    # triangle_idx = last_triangle_idx
-    #
-    # # Keep track of visited triangles to avoid cycles
-    # visited = {triangle_idx}
-    # while True:
-    #     logger.debug(f"visiting {triangle_idx}")
-    #
-    #     # Get the current triangle vertices
+    # for triangle_idx, val in enumerate(triangulation.triangle_vertices):
     #     v_indices = triangulation.triangle_vertices[triangle_idx]
     #     triangle = triangulation.all_points[v_indices]
-    #     # triangle = ensure_ccw_triangle(v_indices, triangulation.all_points)
-    #
-    #     # Check if the point is inside this triangle
     #     if point_inside_triangle(triangle, point):
     #         return triangle_idx
     #
-    #     # If not inside, find which edge to cross using the adjacent triangles information
-    #     edges = [(0, 1), (1, 2), (2, 0)]  # Edge indices in the triangle
-    #     next_idx = None
-    #     for i, (e1, e2) in enumerate(edges):
-    #         # Vector from edge to point
-    #         edge_vector = triangle[e2] - triangle[e1]
-    #         point_vector = point - triangle[e1]
-    #
-    #         # If cross product is negative, the point is on the "outside" of this edge
-    #         cross_prod = edge_vector[0] * point_vector[1] - edge_vector[1] * point_vector[0]
-    #         if cross_prod < 0:
-    #             # Get the adjacent triangle for this edge
-    #             adjacent_idx = triangulation.triangle_neighbors[triangle_idx, i]
-    #
-    #             # If there's an adjacent triangle (not a boundary) and we haven't visited it
-    #             if adjacent_idx != -1 and adjacent_idx not in visited:
-    #                 next_idx = adjacent_idx
-    #                 visited.add(adjacent_idx)
-    #                 break
-    #
-    #     if next_idx is None:
-    #         raise ValueError(f"Couldn't find a triangle containing {point}")
-    #     triangle_idx = next_idx
+    # raise RuntimeError("No triangles found")
+
+    # Start from the last added triangle
+    triangle_idx = last_triangle_idx
+
+    # Keep track of visited triangles to avoid cycles
+    visited = {triangle_idx}
+    while True:
+        logger.debug(f"visiting {triangle_idx}")
+
+        # Get the current triangle vertices
+        v_indices = triangulation.triangle_vertices[triangle_idx]
+        triangle = triangulation.all_points[v_indices]
+
+        # Check if the point is inside this triangle
+        if point_inside_triangle(triangle, point):
+            return triangle_idx
+
+        # If not inside, find which edge to cross using the adjacent triangles information
+        # Get edge indices in the triangle. NOTE!!! => it should be consistent with triangle_neighbors
+        edges = [(1, 2), (2, 0), (0, 1)]
+        next_idx = None
+        for i, (e1, e2) in enumerate(edges):
+            # Vector from edge to point
+            edge_vector = triangle[e2] - triangle[e1]
+            point_vector = point - triangle[e1]
+
+            # If cross product is negative, the point is on the "outside" of this edge
+            cross_prod = edge_vector[0] * point_vector[1] - edge_vector[1] * point_vector[0]
+            if cross_prod < 0:
+                # Get the adjacent triangle for this edge
+                adjacent_idx = triangulation.triangle_neighbors[triangle_idx, i]
+
+                # If there's an adjacent triangle (not a boundary) and we haven't visited it
+                if adjacent_idx != -1 and adjacent_idx not in visited:
+                    next_idx = adjacent_idx
+                    visited.add(adjacent_idx)
+                    break
+
+        if next_idx is None:
+            raise ValueError(f"Couldn't find a triangle containing {point}")
+        triangle_idx = next_idx
 
 
 def get_sorted_points(
@@ -258,8 +307,8 @@ def get_sorted_points(
 
         # Plot the points
         ax.scatter(
-            normalized_points[:, 0],
-            normalized_points[:, 1],
+            points[:, 0],
+            points[:, 1],
             c="blue",
             label="Original points",
         )
@@ -297,8 +346,8 @@ def initialize_triangulation(
     """
     super_vertices = np.array(
         [
-            [-margin, -margin],
-            [margin, -margin],
+            [-margin + 0.5, -margin / 2],
+            [margin + 0.5, -margin / 2],
             [0.5, margin],
         ]
     )
@@ -776,12 +825,13 @@ def remove_super_triangle_triangles(
     triangulation.last_triangle_idx = triangulation.triangle_vertices.shape[0]
 
 
-def triangulate(points: NDArray[np.floating]):
+def triangulate(points: NDArray[np.floating], debug: bool = False):
     """
     Implement Delaunay triangulation using the incremental algorithm with efficient
     adjacency tracking.
 
     :param points: Input points to triangulate
+    :param debug: plot debug images
     :return: List of triangles forming the Delaunay triangulation
     """
     # Sort points for efficient insertion
@@ -806,7 +856,7 @@ def triangulate(points: NDArray[np.floating]):
             point_idx=point_idx,
             point=point,
             triangulation=triangulation,
-            debug=False,
+            debug=debug,
         )
 
     # Remove triangles that contain vertices of the super triangle
